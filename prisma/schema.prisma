@@ -1,0 +1,200 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================
+// USER & ADMIN MODELS
+// ============================================
+
+model User {
+  id               String    @id @default(uuid())
+  email            String    @unique
+  firstName        String
+  lastName         String
+  password         String?
+  googleId         String?   @unique
+  avatar           String?
+  role             UserRole  @default(STUDENT)
+  status           UserStatus @default(ACTIVE)
+  isEmailVerified  Boolean   @default(false)
+  resetToken       String?
+  resetTokenExpiry DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  // Relations
+  enrollments      Enrollment[]
+  coursesCreated   Course[]     @relation("InstructorCourses")
+}
+
+model Admin {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  name      String?
+  password  String
+  role      String   @default("admin")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ============================================
+// COURSE MANAGEMENT MODELS
+// ============================================
+
+model Category {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  slug        String   @unique
+  description String?
+  icon        String   @default("BookOpen")
+  iconBgColor String   @default("#3B82F6")
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  courses     Course[]
+}
+
+model Course {
+  id           String       @id @default(uuid())
+  title        String
+  slug         String       @unique
+  summary      String?
+  description  String?
+  thumbnail    String?
+  price        Float        @default(0)
+  level        CourseLevel  @default(BEGINNER)
+  status       CourseStatus @default(DRAFT)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  // Relations
+  categoryId   String
+  category     Category     @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  instructorId String
+  instructor   User         @relation("InstructorCourses", fields: [instructorId], references: [id], onDelete: Restrict)
+
+  modules      Module[]
+  enrollments  Enrollment[]
+
+  @@index([categoryId])
+  @@index([instructorId])
+  @@index([status])
+}
+
+model Module {
+  id        String   @id @default(uuid())
+  title     String
+  summary   String?
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  courseId  String
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lessons   Lesson[]
+
+  @@index([courseId])
+}
+
+model Lesson {
+  id        String   @id @default(uuid())
+  title     String
+  videoUrl  String?
+  duration  Int      @default(0) // in seconds
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  moduleId  String
+  module    Module   @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+
+  @@index([moduleId])
+}
+
+// ============================================
+// ENROLLMENT MODEL
+// ============================================
+
+model Enrollment {
+  id          String           @id @default(uuid())
+  price       Float            @default(0)
+  status      EnrollmentStatus @default(PENDING)
+  progress    Int              @default(0) // percentage 0-100
+  enrolledAt  DateTime         @default(now())
+  completedAt DateTime?
+  updatedAt   DateTime         @updatedAt
+
+  // Relations
+  userId      String
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  courseId    String
+  course      Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, courseId])
+  @@index([userId])
+  @@index([courseId])
+  @@index([status])
+}
+
+// ============================================
+// SETTINGS MODEL
+// ============================================
+
+model Settings {
+  id                      String   @id @default("default")
+  siteName                String   @default("LKnight")
+  logo                    String?
+  contactEmail            String   @default("contact@lknight.com")
+  supportEmail            String   @default("support@lknight.com")
+  currency                String   @default("USD")
+  defaultCourseStatus     String   @default("DRAFT")
+  enrollmentNotifications Boolean  @default(true)
+  marketingEmails         Boolean  @default(false)
+  maintenanceMode         Boolean  @default(false)
+  updatedAt               DateTime @updatedAt
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum UserRole {
+  STUDENT
+  INSTRUCTOR
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum CourseLevel {
+  BEGINNER
+  INTERMEDIATE
+  ADVANCED
+}
+
+enum CourseStatus {
+  DRAFT
+  PUBLISHED
+}
+
+enum EnrollmentStatus {
+  PENDING
+  COMPLETED
+  REFUNDED
+}
