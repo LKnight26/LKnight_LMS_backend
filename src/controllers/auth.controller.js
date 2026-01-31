@@ -63,7 +63,7 @@ const signup = async (req, res, next) => {
         email,
         password: hashedPassword,
       },
-      select: { id: true, email: true, firstName: true, lastName: true, createdAt: true },
+      select: { id: true, email: true, firstName: true, lastName: true, role: true, status: true, createdAt: true },
     });
 
     const token = generateToken(user.id);
@@ -117,6 +117,8 @@ const signin = async (req, res, next) => {
           email: user.email,
           firstName: user.firstName,
           lastName: user.lastName,
+          role: user.role,
+          status: user.status,
         },
         token,
       },
@@ -180,6 +182,8 @@ const googleLogin = async (req, res, next) => {
           email: user.email,
           firstName: user.firstName,
           lastName: user.lastName,
+          role: user.role,
+          status: user.status,
         },
         token,
       },
@@ -349,6 +353,9 @@ const getMe = async (req, res, next) => {
         email: true,
         firstName: true,
         lastName: true,
+        role: true,
+        status: true,
+        avatar: true,
         isEmailVerified: true,
         createdAt: true,
         updatedAt: true,
@@ -377,14 +384,48 @@ const updateProfile = async (req, res, next) => {
     const { userId } = req.params;
     const { firstName, lastName, email } = req.body;
 
+    // Check if user exists first
+    const existingUser = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!existingUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    // Check if email is being changed and if new email already exists
+    if (email && email !== existingUser.email) {
+      const emailExists = await prisma.user.findUnique({
+        where: { email },
+      });
+      if (emailExists) {
+        return res.status(409).json({
+          success: false,
+          message: 'Email already in use',
+        });
+      }
+    }
+
+    const updateData = {};
+    if (firstName) updateData.firstName = firstName;
+    if (lastName) updateData.lastName = lastName;
+    if (email) updateData.email = email;
+
     const user = await prisma.user.update({
       where: { id: userId },
-      data: { firstName, lastName, email },
+      data: updateData,
       select: {
         id: true,
         email: true,
         firstName: true,
         lastName: true,
+        role: true,
+        status: true,
+        avatar: true,
+        isEmailVerified: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -392,6 +433,7 @@ const updateProfile = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
+      message: 'Profile updated successfully',
       data: user,
     });
   } catch (error) {

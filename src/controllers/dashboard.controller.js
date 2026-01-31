@@ -114,6 +114,16 @@ const getDashboardStats = async (req, res, next) => {
     res.status(200).json({
       success: true,
       data: {
+        // Flat structure for frontend compatibility
+        totalRevenue: allTimeRevenue._sum.price || 0,
+        revenueChange: calculateChange(currentRevenue, prevRevenue),
+        totalUsers: allTimeUsers,
+        usersChange: calculateChange(totalUsers, previousUsers),
+        totalCourses: allTimeCourses,
+        coursesChange: calculateChange(totalCourses, previousCourses),
+        totalEnrollments: allTimeEnrollments,
+        enrollmentsChange: calculateChange(totalEnrollments, previousEnrollments),
+        // Detailed structure for advanced usage
         revenue: {
           value: allTimeRevenue._sum.price || 0,
           periodValue: currentRevenue,
@@ -225,8 +235,10 @@ const getUserGrowthChart = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      data: chartData,
-      trend,
+      data: {
+        data: chartData,
+        trend,
+      },
     });
   } catch (error) {
     next(error);
@@ -259,11 +271,19 @@ const getRecentEnrollments = async (req, res, next) => {
       success: true,
       data: enrollments.map((enrollment) => ({
         id: enrollment.id,
-        user: `${enrollment.user.firstName} ${enrollment.user.lastName}`,
-        avatar: enrollment.user.avatar,
-        course: enrollment.course.title,
-        price: enrollment.price,
-        date: enrollment.enrolledAt,
+        user: {
+          id: enrollment.user.id,
+          firstName: enrollment.user.firstName,
+          lastName: enrollment.user.lastName,
+          avatar: enrollment.user.avatar,
+        },
+        course: {
+          id: enrollment.course.id,
+          title: enrollment.course.title,
+          price: enrollment.price,
+          thumbnail: enrollment.course.thumbnail,
+        },
+        enrolledAt: enrollment.enrolledAt,
         status: capitalize(enrollment.status),
       })),
     });

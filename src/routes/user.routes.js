@@ -73,8 +73,7 @@ router.post('/', createUser);
  *                   type: boolean
  *                   example: true
  *                 count:
- *                   type: string
- *           format: uuid
+ *                   type: integer
  *                 data:
  *                   type: array
  *                   items:

@@ -1,5 +1,8 @@
 const swaggerJsdoc = require('swagger-jsdoc');
 
+const PORT = process.env.PORT || 5000;
+const HOST = process.env.HOST || 'localhost';
+
 const options = {
   definition: {
     openapi: '3.0.0',
@@ -10,7 +13,7 @@ const options = {
     },
     servers: [
       {
-        url: 'http://localhost:3000',
+        url: `http://${HOST}:${PORT}`,
         description: 'Development server',
       },
     ],

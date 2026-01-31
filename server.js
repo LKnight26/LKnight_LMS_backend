@@ -23,11 +23,20 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: ['http://localhost:3000', 'http://localhost:3001', 'http://localhost:5000'],
+  credentials: true
+}));
 app.use(express.json());
 
 // Swagger Documentation
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+const swaggerOptions = {
+  swaggerOptions: {
+    tryItOutEnabled: true,           // Auto-enable "Try it out" for all endpoints
+    persistAuthorization: true,      // Keep bearer token after page refresh
+  },
+};
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, swaggerOptions));
 
 // Health check
 app.get('/', (req, res) => {

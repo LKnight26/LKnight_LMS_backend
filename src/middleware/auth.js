@@ -44,7 +44,7 @@ const verifyToken = async (req, res, next) => {
 
 /**
  * Verify admin token middleware
- * Checks if the token belongs to an admin
+ * Checks if the token belongs to a user with ADMIN role
  */
 const verifyAdmin = async (req, res, next) => {
   try {
@@ -60,20 +60,21 @@ const verifyAdmin = async (req, res, next) => {
     const token = authHeader.split(' ')[1];
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    // Check if admin exists
-    const admin = await prisma.admin.findUnique({
+    // Check if user exists and has ADMIN role
+    const user = await prisma.user.findUnique({
       where: { id: decoded.id },
     });
 
-    if (!admin) {
+    if (!user || user.role !== 'ADMIN') {
       return res.status(403).json({
         success: false,
         message: 'Access denied. Admin privileges required.',
       });
     }
 
-    req.adminId = decoded.id;
-    req.admin = admin;
+    req.userId = decoded.id;
+    req.user = user;
+    req.isAdmin = true;
 
     next();
   } catch (error) {
@@ -113,24 +114,26 @@ const verifyInstructorOrAdmin = async (req, res, next) => {
     const token = authHeader.split(' ')[1];
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    // Check if admin
-    const admin = await prisma.admin.findUnique({
-      where: { id: decoded.id },
-    });
-
-    if (admin) {
-      req.adminId = decoded.id;
-      req.admin = admin;
-      req.isAdmin = true;
-      return next();
-    }
-
-    // Check if instructor
+    // Check user exists and has appropriate role
     const user = await prisma.user.findUnique({
       where: { id: decoded.id },
     });
 
-    if (user && user.role === 'INSTRUCTOR') {
+    if (!user) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. User not found.',
+      });
+    }
+
+    if (user.role === 'ADMIN') {
+      req.userId = decoded.id;
+      req.user = user;
+      req.isAdmin = true;
+      return next();
+    }
+
+    if (user.role === 'INSTRUCTOR') {
       req.userId = decoded.id;
       req.user = user;
       req.isInstructor = true;
