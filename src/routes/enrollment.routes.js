@@ -9,6 +9,12 @@ const {
   processRefund,
   deleteEnrollment,
   getEnrollmentStats,
+  getMyEnrollments,
+  getUserDashboardStats,
+  getAllCoursesWithStatus,
+  purchaseCourse,
+  getCheckoutDetails,
+  enrollInAllCourses,
 } = require('../controllers/enrollment.controller');
 const { verifyAdmin, verifyToken } = require('../middleware/auth');
 
@@ -54,6 +60,108 @@ const { verifyAdmin, verifyToken } = require('../middleware/auth');
  *         price:
  *           type: number
  */
+
+/**
+ * @swagger
+ * /api/enrollments/my-courses:
+ *   get:
+ *     summary: Get current user's enrolled courses
+ *     tags: [Enrollments]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of user's enrolled courses
+ */
+router.get('/my-courses', verifyToken, getMyEnrollments);
+
+/**
+ * @swagger
+ * /api/enrollments/my-stats:
+ *   get:
+ *     summary: Get current user's dashboard statistics
+ *     tags: [Enrollments]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: User dashboard statistics
+ */
+router.get('/my-stats', verifyToken, getUserDashboardStats);
+
+/**
+ * @swagger
+ * /api/enrollments/all-courses:
+ *   get:
+ *     summary: Get all published courses with user's enrollment status
+ *     tags: [Enrollments]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of all courses with enrollment status
+ */
+router.get('/all-courses', verifyToken, getAllCoursesWithStatus);
+
+/**
+ * @swagger
+ * /api/enrollments/checkout/{courseId}:
+ *   get:
+ *     summary: Get course details for checkout page
+ *     tags: [Enrollments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: courseId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Course checkout details
+ *       404:
+ *         description: Course not found
+ */
+router.get('/checkout/:courseId', verifyToken, getCheckoutDetails);
+
+/**
+ * @swagger
+ * /api/enrollments/purchase/{courseId}:
+ *   post:
+ *     summary: Purchase/enroll in a single course
+ *     tags: [Enrollments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: courseId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       201:
+ *         description: Successfully enrolled in course
+ *       404:
+ *         description: Course not found
+ *       409:
+ *         description: Already enrolled
+ */
+router.post('/purchase/:courseId', verifyToken, purchaseCourse);
+
+/**
+ * @swagger
+ * /api/enrollments/enroll-all:
+ *   post:
+ *     summary: Enroll current user in all available courses (free access)
+ *     tags: [Enrollments]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       201:
+ *         description: Successfully enrolled in courses
+ */
+router.post('/enroll-all', verifyToken, enrollInAllCourses);
 
 /**
  * @swagger

@@ -24,6 +24,7 @@ model User {
   role             UserRole  @default(STUDENT)
   status           UserStatus @default(ACTIVE)
   isEmailVerified  Boolean   @default(false)
+  accessAll        Boolean   @default(false)
   resetToken       String?
   resetTokenExpiry DateTime?
   createdAt        DateTime  @default(now())
@@ -92,12 +93,15 @@ model Course {
 }
 
 model Module {
-  id        String   @id @default(uuid())
-  title     String
-  summary   String?
-  order     Int      @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String   @id @default(uuid())
+  title       String
+  summary     String?
+  description String?  @db.Text
+  content     String?  @db.Text // Base64 encoded video/image content
+  contentType String?  // MIME type (e.g., "video/mp4", "image/jpeg")
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   // Relations
   courseId  String
@@ -108,13 +112,16 @@ model Module {
 }
 
 model Lesson {
-  id        String   @id @default(uuid())
-  title     String
-  videoUrl  String?
-  duration  Int      @default(0) // in seconds
-  order     Int      @default(0)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String   @id @default(uuid())
+  title       String
+  description String?  @db.Text
+  videoUrl    String?
+  content     String?  @db.Text // Base64 encoded video/image content
+  contentType String?  // MIME type (e.g., "video/mp4", "image/jpeg")
+  duration    Int      @default(0) // in seconds
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   // Relations
   moduleId  String

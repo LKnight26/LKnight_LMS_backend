@@ -63,7 +63,7 @@ const signup = async (req, res, next) => {
         email,
         password: hashedPassword,
       },
-      select: { id: true, email: true, firstName: true, lastName: true, role: true, status: true, createdAt: true },
+      select: { id: true, email: true, firstName: true, lastName: true, role: true, status: true, accessAll: true, createdAt: true },
     });
 
     const token = generateToken(user.id);
@@ -119,6 +119,7 @@ const signin = async (req, res, next) => {
           lastName: user.lastName,
           role: user.role,
           status: user.status,
+          accessAll: user.accessAll,
         },
         token,
       },
@@ -184,6 +185,7 @@ const googleLogin = async (req, res, next) => {
           lastName: user.lastName,
           role: user.role,
           status: user.status,
+          accessAll: user.accessAll,
         },
         token,
       },
@@ -357,6 +359,7 @@ const getMe = async (req, res, next) => {
         status: true,
         avatar: true,
         isEmailVerified: true,
+        accessAll: true,
         createdAt: true,
         updatedAt: true,
       },
@@ -426,6 +429,7 @@ const updateProfile = async (req, res, next) => {
         status: true,
         avatar: true,
         isEmailVerified: true,
+        accessAll: true,
         createdAt: true,
         updatedAt: true,
       },

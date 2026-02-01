@@ -31,7 +31,10 @@ const getModulesByCourse = async (req, res, next) => {
           select: {
             id: true,
             title: true,
+            description: true,
             videoUrl: true,
+            content: true,
+            contentType: true,
             duration: true,
             order: true,
           },
@@ -127,7 +130,7 @@ const getModuleById = async (req, res, next) => {
 const createModule = async (req, res, next) => {
   try {
     const { courseId } = req.params;
-    const { title, summary } = req.body;
+    const { title, summary, description, content, contentType } = req.body;
 
     // Validation
     if (!title || title.trim() === '') {
@@ -162,6 +165,9 @@ const createModule = async (req, res, next) => {
       data: {
         title: title.trim(),
         summary: summary?.trim() || null,
+        description: description?.trim() || null,
+        content: content || null,
+        contentType: contentType || null,
         courseId,
         order,
       },
@@ -194,7 +200,7 @@ const createModule = async (req, res, next) => {
 const updateModule = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { title, summary } = req.body;
+    const { title, summary, description, content, contentType } = req.body;
 
     // Check module exists
     const existingModule = await prisma.module.findUnique({
@@ -216,6 +222,18 @@ const updateModule = async (req, res, next) => {
 
     if (summary !== undefined) {
       updateData.summary = summary?.trim() || null;
+    }
+
+    if (description !== undefined) {
+      updateData.description = description?.trim() || null;
+    }
+
+    if (content !== undefined) {
+      updateData.content = content || null;
+    }
+
+    if (contentType !== undefined) {
+      updateData.contentType = contentType || null;
     }
 
     const updatedModule = await prisma.module.update({

@@ -95,7 +95,7 @@ const getLessonById = async (req, res, next) => {
 const createLesson = async (req, res, next) => {
   try {
     const { moduleId } = req.params;
-    const { title, videoUrl, duration } = req.body;
+    const { title, description, videoUrl, content, contentType, duration } = req.body;
 
     // Validation
     if (!title || title.trim() === '') {
@@ -129,7 +129,10 @@ const createLesson = async (req, res, next) => {
     const lesson = await prisma.lesson.create({
       data: {
         title: title.trim(),
+        description: description?.trim() || null,
         videoUrl: videoUrl?.trim() || null,
+        content: content || null,
+        contentType: contentType || null,
         duration: parseInt(duration) || 0,
         moduleId,
         order,
@@ -154,7 +157,7 @@ const createLesson = async (req, res, next) => {
 const updateLesson = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { title, videoUrl, duration } = req.body;
+    const { title, description, videoUrl, content, contentType, duration } = req.body;
 
     // Check lesson exists
     const existingLesson = await prisma.lesson.findUnique({
@@ -174,8 +177,20 @@ const updateLesson = async (req, res, next) => {
       updateData.title = title.trim();
     }
 
+    if (description !== undefined) {
+      updateData.description = description?.trim() || null;
+    }
+
     if (videoUrl !== undefined) {
       updateData.videoUrl = videoUrl?.trim() || null;
+    }
+
+    if (content !== undefined) {
+      updateData.content = content || null;
+    }
+
+    if (contentType !== undefined) {
+      updateData.contentType = contentType || null;
     }
 
     if (duration !== undefined) {

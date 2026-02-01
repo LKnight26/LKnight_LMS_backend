@@ -109,14 +109,16 @@ const getAllCourses = async (req, res, next) => {
 
     res.status(200).json({
       success: true,
-      data: transformedCourses,
-      pagination: {
-        page: parseInt(page),
-        limit: take,
-        total,
-        totalPages: Math.ceil(total / take),
-        hasNext: skip + take < total,
-        hasPrev: parseInt(page) > 1,
+      data: {
+        courses: transformedCourses,
+        pagination: {
+          page: parseInt(page),
+          limit: take,
+          total,
+          totalPages: Math.ceil(total / take),
+          hasNext: skip + take < total,
+          hasPrev: parseInt(page) > 1,
+        },
       },
     });
   } catch (error) {
@@ -594,9 +596,9 @@ const getCourseStats = async (req, res, next) => {
     res.status(200).json({
       success: true,
       data: {
-        totalCourses,
-        publishedCourses,
-        draftCourses,
+        total: totalCourses,
+        published: publishedCourses,
+        draft: draftCourses,
         totalEnrollments,
       },
     });

@@ -415,12 +415,12 @@ const getUserStats = async (req, res, next) => {
     res.status(200).json({
       success: true,
       data: {
-        totalUsers,
+        total: totalUsers,
         students,
         instructors,
         admins,
-        activeUsers,
-        inactiveUsers,
+        active: activeUsers,
+        inactive: inactiveUsers,
       },
     });
   } catch (error) {
