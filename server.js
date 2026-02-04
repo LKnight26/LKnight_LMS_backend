@@ -91,8 +91,9 @@ app.use('/api/admin/dashboard', dashboardRoutes);
 // Error handling middleware
 app.use(errorHandler);
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`);
-  console.log(`Swagger docs available at http://localhost:${PORT}/api-docs`);
+// Start server - bind to 0.0.0.0 for Docker/Railway
+const HOST = '0.0.0.0';
+app.listen(PORT, HOST, () => {
+  console.log(`Server is running on http://${HOST}:${PORT}`);
+  console.log(`Swagger docs available at http://${HOST}:${PORT}/api-docs`);
 });

@@ -11,12 +11,11 @@ WORKDIR /app
 # Copy package files first (for better layer caching)
 COPY package.json package-lock.json ./
 
-# Install ALL dependencies (including prisma for migrations)
-RUN npm ci
+# Install dependencies (prisma is in dependencies for migrations)
+RUN npm ci && npm cache clean --force
 
-# Copy prisma schema and config
+# Copy prisma schema
 COPY prisma ./prisma/
-COPY prisma.config.ts ./
 
 # Generate Prisma Client
 RUN npx prisma generate
@@ -24,8 +23,9 @@ RUN npx prisma generate
 # Copy application code
 COPY . .
 
-# Expose port
-EXPOSE 3000
+# Railway injects PORT env var
+ENV PORT=3000
+EXPOSE $PORT
 
 # Start the application
 CMD ["node", "server.js"]
