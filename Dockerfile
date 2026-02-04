@@ -1,4 +1,4 @@
-# Production Dockerfile for Express + Prisma
+# Production Dockerfile for Express + Prisma 7
 # Based on Prisma official Docker documentation
 
 FROM node:22-slim
@@ -14,8 +14,9 @@ COPY package.json package-lock.json ./
 # Install dependencies (prisma is in dependencies for migrations)
 RUN npm ci && npm cache clean --force
 
-# Copy prisma schema
+# Copy prisma schema and config (required for Prisma 7)
 COPY prisma ./prisma/
+COPY prisma.config.ts ./
 
 # Generate Prisma Client
 RUN npx prisma generate
