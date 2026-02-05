@@ -3,8 +3,7 @@ builder = "dockerfile"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-# Run migrations before starting the app (private network is available here)
-startCommand = "npx prisma migrate deploy && node server.js"
+startCommand = "sh start.sh"
 healthcheckPath = "/"
 healthcheckTimeout = 300
 restartPolicyType = "on_failure"
