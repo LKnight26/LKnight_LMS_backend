@@ -24,7 +24,8 @@ RUN npx prisma generate
 # Copy application code
 COPY . .
 
-# Railway injects PORT env var
+# Environment variables
+ENV NODE_ENV=production
 ENV PORT=3000
 EXPOSE $PORT
 

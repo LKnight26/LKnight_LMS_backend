@@ -1,8 +1,22 @@
 require('dotenv').config();
+console.log('[SERVER] Starting application...');
+console.log('[SERVER] NODE_ENV:', process.env.NODE_ENV);
+console.log('[SERVER] PORT:', process.env.PORT);
+
 const express = require('express');
 const cors = require('cors');
 const swaggerUi = require('swagger-ui-express');
 const swaggerSpec = require('./src/config/swagger');
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (err) => {
+  console.error('[SERVER] Uncaught Exception:', err);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[SERVER] Unhandled Rejection at:', promise, 'reason:', reason);
+});
 
 // Route imports
 const authRoutes = require('./src/routes/auth.routes');
@@ -93,7 +107,15 @@ app.use(errorHandler);
 
 // Start server - bind to 0.0.0.0 for Docker/Railway
 const HOST = '0.0.0.0';
-app.listen(PORT, HOST, () => {
-  console.log(`Server is running on http://${HOST}:${PORT}`);
-  console.log(`Swagger docs available at http://${HOST}:${PORT}/api-docs`);
+console.log(`[SERVER] Attempting to start on ${HOST}:${PORT}...`);
+
+const server = app.listen(PORT, HOST, () => {
+  console.log(`[SERVER] ✓ Server is running on http://${HOST}:${PORT}`);
+  console.log(`[SERVER] ✓ Swagger docs available at http://${HOST}:${PORT}/api-docs`);
+  console.log(`[SERVER] ✓ Health check endpoint: http://${HOST}:${PORT}/`);
+});
+
+server.on('error', (err) => {
+  console.error('[SERVER] Failed to start server:', err);
+  process.exit(1);
 });
