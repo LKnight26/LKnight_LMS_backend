@@ -132,62 +132,144 @@ const signin = async (req, res, next) => {
 // Google Login
 const googleLogin = async (req, res, next) => {
   try {
-    const { idToken } = req.body;
+    const idToken = req.body.idToken || req.body.credential;
+    const { accessToken } = req.body;
 
-    if (!idToken) {
+    if (!idToken && !accessToken) {
       return res.status(400).json({
         success: false,
-        message: 'Google ID token is required',
+        message: 'Google token is required',
       });
     }
 
-    const ticket = await googleClient.verifyIdToken({
-      idToken,
-      audience: process.env.GOOGLE_CLIENT_ID,
-    });
+    let googleId, email, given_name, family_name, picture;
 
-    const payload = ticket.getPayload();
-    const { sub: googleId, email, given_name: firstName, family_name: lastName } = payload;
+    if (idToken) {
+      // Flow 1: ID token verification (from Google One Tap / GoogleLogin component)
+      try {
+        const ticket = await googleClient.verifyIdToken({
+          idToken,
+          audience: process.env.GOOGLE_CLIENT_ID,
+        });
+        const payload = ticket.getPayload();
+        googleId = payload.sub;
+        email = payload.email;
+        given_name = payload.given_name;
+        family_name = payload.family_name;
+        picture = payload.picture;
+      } catch (verifyError) {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid or expired Google token',
+        });
+      }
+    } else {
+      // Flow 2: Access token verification (from useGoogleLogin custom button)
+      try {
+        const response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (!response.ok) {
+          return res.status(401).json({
+            success: false,
+            message: 'Invalid or expired Google access token',
+          });
+        }
+        const userInfo = await response.json();
+        googleId = userInfo.sub;
+        email = userInfo.email;
+        given_name = userInfo.given_name;
+        family_name = userInfo.family_name;
+        picture = userInfo.picture;
+      } catch (fetchError) {
+        return res.status(401).json({
+          success: false,
+          message: 'Failed to verify Google access token',
+        });
+      }
+    }
 
-    let user = await prisma.user.findUnique({ where: { googleId } });
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Google account does not have an email address',
+      });
+    }
 
-    if (!user) {
+    const firstName = given_name || '';
+    const lastName = family_name || '';
+    let user = null;
+    let isNewUser = false;
+
+    // 1. Try finding by googleId first (returning user)
+    user = await prisma.user.findUnique({ where: { googleId } });
+
+    if (user) {
+      // Update name and avatar from Google on every login
+      user = await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          firstName: firstName || user.firstName,
+          lastName: lastName || user.lastName,
+          avatar: picture || user.avatar,
+        },
+      });
+    } else {
+      // 2. Check if email already exists (link Google to existing account)
       user = await prisma.user.findUnique({ where: { email } });
 
       if (user) {
         user = await prisma.user.update({
-          where: { email },
-          data: { googleId, isEmailVerified: true },
+          where: { id: user.id },
+          data: {
+            googleId,
+            isEmailVerified: true,
+            avatar: picture || user.avatar,
+          },
         });
       } else {
+        // 3. Brand new user
         user = await prisma.user.create({
           data: {
             googleId,
             email,
-            firstName: firstName || '',
-            lastName: lastName || '',
+            firstName,
+            lastName,
+            avatar: picture || null,
             isEmailVerified: true,
           },
         });
+        isNewUser = true;
       }
+    }
+
+    // Block inactive users
+    if (user.status === 'INACTIVE') {
+      return res.status(403).json({
+        success: false,
+        message: 'Your account has been deactivated. Please contact support.',
+      });
     }
 
     const token = generateToken(user.id);
 
     res.status(200).json({
       success: true,
-      message: 'Google login successful',
+      message: isNewUser ? 'Account created successfully' : 'Google login successful',
       data: {
         user: {
           id: user.id,
           email: user.email,
           firstName: user.firstName,
           lastName: user.lastName,
+          avatar: user.avatar,
           role: user.role,
           status: user.status,
           accessAll: user.accessAll,
+          isEmailVerified: user.isEmailVerified,
         },
         token,
+        isNewUser,
       },
     });
   } catch (error) {
@@ -355,6 +437,8 @@ const getMe = async (req, res, next) => {
         email: true,
         firstName: true,
         lastName: true,
+        password: true,
+        googleId: true,
         role: true,
         status: true,
         avatar: true,
@@ -372,9 +456,15 @@ const getMe = async (req, res, next) => {
       });
     }
 
+    const { password, googleId, ...userData } = user;
+
     res.status(200).json({
       success: true,
-      data: user,
+      data: {
+        ...userData,
+        hasPassword: !!password,
+        isGoogleUser: !!googleId,
+      },
     });
   } catch (error) {
     next(error);

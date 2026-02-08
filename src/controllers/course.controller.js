@@ -156,7 +156,15 @@ const getCourseById = async (req, res, next) => {
                 order: true,
               },
             },
+            documents: {
+              orderBy: { order: 'asc' },
+              select: { id: true, title: true, fileName: true, fileSize: true, fileType: true, order: true, createdAt: true },
+            },
           },
+        },
+        documents: {
+          orderBy: { order: 'asc' },
+          select: { id: true, title: true, fileName: true, fileSize: true, fileType: true, order: true, createdAt: true },
         },
         _count: {
           select: { enrollments: true },
