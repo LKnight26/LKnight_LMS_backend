@@ -68,6 +68,10 @@ const getLessonById = async (req, res, next) => {
             },
           },
         },
+        documents: {
+          orderBy: { order: 'asc' },
+          select: { id: true, title: true, fileName: true, fileSize: true, fileType: true, order: true, createdAt: true },
+        },
       },
     });
 

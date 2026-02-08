@@ -86,6 +86,7 @@ model Course {
 
   modules      Module[]
   enrollments  Enrollment[]
+  documents    Document[]
 
   @@index([categoryId])
   @@index([instructorId])
@@ -107,6 +108,7 @@ model Module {
   courseId  String
   course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
   lessons   Lesson[]
+  documents Document[]
 
   @@index([courseId])
 }
@@ -126,6 +128,7 @@ model Lesson {
   // Relations
   moduleId  String
   module    Module   @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  documents Document[]
 
   @@index([moduleId])
 }
@@ -154,6 +157,76 @@ model Enrollment {
   @@index([userId])
   @@index([courseId])
   @@index([status])
+}
+
+// ============================================
+// TEAM MEMBER MODEL
+// ============================================
+
+model TeamMember {
+  id          String   @id @default(uuid())
+  name        String
+  role        String
+  description String?
+  image       String?  @db.Text
+  email       String?
+  facebook    String?
+  linkedin    String?
+  order       Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ============================================
+// TESTIMONIAL MODEL
+// ============================================
+
+model Testimonial {
+  id              String   @id @default(uuid())
+  name            String
+  content         String   @db.Text
+  rating          Int      @default(5) // 1-5
+  image           String?  @db.Text
+  gender          String   @default("male") // male | female
+  showOnHome      Boolean  @default(false)
+  showOnAbout     Boolean  @default(false)
+  showOnCourses   Boolean  @default(false)
+  showOnDashboard Boolean  @default(false)
+  isActive        Boolean  @default(true)
+  order           Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// ============================================
+// DOCUMENT MODEL
+// ============================================
+
+model Document {
+  id        String   @id @default(uuid())
+  title     String
+  fileName  String
+  fileSize  Int      @default(0)
+  fileType  String
+  content   String   @db.Text // Base64 encoded file content
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Polymorphic: exactly one of these should be set
+  courseId  String?
+  course    Course?  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  moduleId String?
+  module   Module?  @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+
+  lessonId String?
+  lesson   Lesson?  @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@index([courseId])
+  @@index([moduleId])
+  @@index([lessonId])
 }
 
 // ============================================

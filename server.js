@@ -30,6 +30,14 @@ const lessonRoutes = require('./src/routes/lesson.routes');
 const { standaloneRouter: lessonStandaloneRoutes } = require('./src/routes/lesson.routes');
 const dashboardRoutes = require('./src/routes/dashboard.routes');
 const enrollmentRoutes = require('./src/routes/enrollment.routes');
+const teamRoutes = require('./src/routes/team.routes');
+const testimonialRoutes = require('./src/routes/testimonial.routes');
+const {
+  courseDocumentRouter,
+  moduleDocumentRouter,
+  lessonDocumentRouter,
+  standaloneRouter: documentStandaloneRoutes,
+} = require('./src/routes/document.routes');
 
 const errorHandler = require('./src/middleware/errorHandler');
 
@@ -78,6 +86,13 @@ app.use('/api/admins', adminRoutes);
 // COURSE MANAGEMENT ROUTES
 // ============================================
 app.use('/api/categories', categoryRoutes);
+
+// Document routes (registered before entity routes for proper path matching)
+app.use('/api/courses/:courseId/documents', courseDocumentRouter);
+app.use('/api/modules/:moduleId/documents', moduleDocumentRouter);
+app.use('/api/lessons/:lessonId/documents', lessonDocumentRouter);
+app.use('/api/documents', documentStandaloneRoutes);
+
 app.use('/api/courses', courseRoutes);
 
 // Nested routes for modules under courses
@@ -102,17 +117,26 @@ app.use('/api/enrollments', enrollmentRoutes);
 // ============================================
 app.use('/api/admin/dashboard', dashboardRoutes);
 
+// ============================================
+// TEAM ROUTES
+// ============================================
+app.use('/api/team', teamRoutes);
+
+// ============================================
+// TESTIMONIAL ROUTES
+// ============================================
+app.use('/api/testimonials', testimonialRoutes);
+
 // Error handling middleware
 app.use(errorHandler);
 
 // Start server - bind to 0.0.0.0 for Docker/Railway
 const HOST = '0.0.0.0';
-console.log(`[SERVER] Attempting to start on ${HOST}:${PORT}...`);
 
 const server = app.listen(PORT, HOST, () => {
-  console.log(`[SERVER] ✓ Server is running on http://${HOST}:${PORT}`);
-  console.log(`[SERVER] ✓ Swagger docs available at http://${HOST}:${PORT}/api-docs`);
-  console.log(`[SERVER] ✓ Health check endpoint: http://${HOST}:${PORT}/`);
+  console.log(`[SERVER] ✓ Server is running on port ${PORT}`);
+  console.log(`[SERVER] ✓ Local:   http://localhost:${PORT}`);
+  console.log(`[SERVER] ✓ Swagger: http://localhost:${PORT}/api-docs`);
 });
 
 server.on('error', (err) => {
