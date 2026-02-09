@@ -32,6 +32,7 @@ const dashboardRoutes = require('./src/routes/dashboard.routes');
 const enrollmentRoutes = require('./src/routes/enrollment.routes');
 const teamRoutes = require('./src/routes/team.routes');
 const testimonialRoutes = require('./src/routes/testimonial.routes');
+const contactRoutes = require('./src/routes/contact.routes');
 const {
   courseDocumentRouter,
   moduleDocumentRouter,
@@ -126,6 +127,11 @@ app.use('/api/team', teamRoutes);
 // TESTIMONIAL ROUTES
 // ============================================
 app.use('/api/testimonials', testimonialRoutes);
+
+// ============================================
+// CONTACT ROUTES
+// ============================================
+app.use('/api/contact', contactRoutes);
 
 // Error handling middleware
 app.use(errorHandler);

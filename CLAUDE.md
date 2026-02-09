@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-LKnight is a Learning Management System (LMS) backend API built with Express.js 5, Prisma ORM, and PostgreSQL. It provides REST APIs for course management, user authentication, enrollments, and admin analytics.
+LKnight is a Learning Management System (LMS) backend API built with Express.js 5, Prisma 7, and PostgreSQL. It provides REST APIs for course management, user authentication, enrollments, and admin analytics.
+
+**Requirements**: Node.js 22.12+ (Prisma 7 requirement)
 
 ## Commands
 
@@ -14,22 +16,32 @@ npm run dev          # Start with nodemon (hot reload)
 npm start            # Start production server
 
 # Database
-npm run prisma:generate   # Generate Prisma client after schema changes
-npm run prisma:migrate    # Run database migrations
-npm run prisma:studio     # Open Prisma Studio GUI
+npx prisma generate        # Generate Prisma client after schema changes
+npx prisma migrate dev     # Create and run migrations (dev)
+npx prisma migrate deploy  # Run migrations (production)
+npx prisma studio          # Open Prisma Studio GUI
 ```
 
 ## Architecture
 
 ### Directory Structure
 - `server.js` - Express app entry point, route mounting, middleware setup
-- `src/config/db.js` - Prisma client singleton with pg adapter
+- `src/config/db.js` - Prisma client singleton with PrismaPg adapter
 - `src/config/swagger.js` - OpenAPI/Swagger configuration
 - `src/controllers/` - Request handlers for each domain
 - `src/routes/` - Express routers with Swagger JSDoc annotations
 - `src/middleware/` - Auth verification and error handling
 - `prisma/schema.prisma` - Database schema and enums
+- `prisma.config.ts` - Prisma 7 configuration (datasource URL, migrations path)
 - `docs/API_DOCUMENTATION.md` - Complete API reference
+
+### Prisma 7 Configuration
+
+This project uses Prisma 7 with the driver adapter pattern. Key differences from Prisma 6:
+
+1. **No `url` in schema.prisma** - The datasource URL is defined in `prisma.config.ts`, not in the schema
+2. **Adapter pattern** - `src/config/db.js` uses `@prisma/adapter-pg` to create the connection
+3. **Config file** - `prisma.config.ts` is required for CLI operations (migrations, generate)
 
 ### Key Patterns
 
@@ -80,4 +92,18 @@ Required in `.env`:
 
 - Swagger UI available at `/api-docs` when server is running
 - Full API reference in `docs/API_DOCUMENTATION.md`
+
+## Deployment (Railway)
+
+Configured for Railway deployment using Docker:
+
+- `Dockerfile` - Production build with node:22-slim, installs OpenSSL for Prisma
+- `railway.toml` - Railway config (uses Dockerfile builder, healthcheck on `/`)
+- `start.sh` - Startup script: runs migrations then starts server
+
+Environment variables to set in Railway:
+- `DATABASE_URL` - Use Railway's PostgreSQL internal URL
+- `JWT_SECRET`, `JWT_EXPIRES_IN`
+- `ALLOWED_ORIGINS` - Comma-separated frontend URLs for CORS
+- `GOOGLE_CLIENT_ID`, `SMTP_*` variables as needed
 
