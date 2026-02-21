@@ -10,6 +10,8 @@ const {
   uploadLessonVideo,
   getLessonVideoUrl,
   getLessonVideoStatus,
+  createVideoUpload,
+  confirmVideoUpload,
 } = require('../controllers/lesson.controller');
 const { verifyToken, verifyInstructorOrAdmin } = require('../middleware/auth');
 const { uploadVideo } = require('../middleware/upload');
@@ -289,5 +291,51 @@ standaloneRouter.get('/:id/video-url', verifyToken, getLessonVideoUrl);
  *         description: Lesson not found
  */
 standaloneRouter.get('/:id/video-status', verifyToken, getLessonVideoStatus);
+
+/**
+ * @swagger
+ * /api/lessons/{id}/create-video-upload:
+ *   post:
+ *     summary: Create Bunny video entry and get TUS upload credentials (direct browser-to-Bunny upload)
+ *     tags: [Lessons]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: TUS upload credentials returned
+ *       404:
+ *         description: Lesson not found
+ */
+standaloneRouter.post('/:id/create-video-upload', verifyInstructorOrAdmin, createVideoUpload);
+
+/**
+ * @swagger
+ * /api/lessons/{id}/confirm-video-upload:
+ *   patch:
+ *     summary: Confirm TUS video upload completed
+ *     tags: [Lessons]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Upload confirmed
+ *       400:
+ *         description: No video upload was initiated
+ *       404:
+ *         description: Lesson not found
+ */
+standaloneRouter.patch('/:id/confirm-video-upload', verifyInstructorOrAdmin, confirmVideoUpload);
 
 module.exports.standaloneRouter = standaloneRouter;

@@ -1,5 +1,7 @@
+const crypto = require('crypto');
 const prisma = require('../config/db');
 const bunnyService = require('../services/bunny.service');
+const bunnyConfig = require('../config/bunny');
 
 /**
  * @desc    Get all lessons for a module
@@ -535,6 +537,131 @@ const getLessonVideoStatus = async (req, res, next) => {
   }
 };
 
+/**
+ * @desc    Create Bunny video entry and return TUS upload credentials
+ *          (Frontend uploads directly to Bunny — no file passes through this server)
+ * @route   POST /api/lessons/:id/create-video-upload
+ * @access  Admin/Instructor
+ */
+const createVideoUpload = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    // Check lesson exists
+    const lesson = await prisma.lesson.findUnique({ where: { id } });
+    if (!lesson) {
+      return res.status(404).json({
+        success: false,
+        message: 'Lesson not found',
+      });
+    }
+
+    // If lesson already has a Bunny video, delete the old one
+    if (lesson.bunnyVideoId) {
+      try {
+        await bunnyService.deleteVideo(lesson.bunnyVideoId);
+      } catch (err) {
+        console.warn('[LESSON] Failed to delete old Bunny video:', err.message);
+      }
+    }
+
+    // Create video entry in Bunny Stream
+    const bunnyVideo = await bunnyService.createVideo(lesson.title);
+
+    // Update lesson in database with new video info
+    const updatedLesson = await prisma.lesson.update({
+      where: { id },
+      data: {
+        bunnyVideoId: bunnyVideo.guid,
+        bunnyLibraryId: String(bunnyVideo.videoLibraryId),
+        videoStatus: 'uploading',
+        thumbnailUrl: bunnyService.getThumbnailUrl(bunnyVideo.guid),
+        content: null,
+        contentType: null,
+      },
+    });
+
+    // Build TUS upload endpoint and auth hash
+    // Bunny TUS endpoint: https://video.bunnycdn.com/tusupload
+    // Auth: AuthorizationSignature = SHA256(library_id + api_key + expiration_time + video_id)
+    const expirationTime = Math.floor(Date.now() / 1000) + 86400; // 24 hours
+    const authSignature = crypto
+      .createHash('sha256')
+      .update(
+        bunnyConfig.libraryId +
+        bunnyConfig.apiKey +
+        expirationTime +
+        bunnyVideo.guid
+      )
+      .digest('hex');
+
+    res.status(200).json({
+      success: true,
+      message: 'Video upload created. Use TUS protocol to upload directly to Bunny.',
+      data: {
+        lessonId: updatedLesson.id,
+        bunnyVideoId: bunnyVideo.guid,
+        videoStatus: updatedLesson.videoStatus,
+        thumbnailUrl: updatedLesson.thumbnailUrl,
+        tusUpload: {
+          endpoint: 'https://video.bunnycdn.com/tusupload',
+          videoId: bunnyVideo.guid,
+          libraryId: bunnyConfig.libraryId,
+          expirationTime,
+          authSignature,
+        },
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Confirm TUS upload completed — update lesson status
+ * @route   PATCH /api/lessons/:id/confirm-video-upload
+ * @access  Admin/Instructor
+ */
+const confirmVideoUpload = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const lesson = await prisma.lesson.findUnique({ where: { id } });
+    if (!lesson) {
+      return res.status(404).json({
+        success: false,
+        message: 'Lesson not found',
+      });
+    }
+
+    if (!lesson.bunnyVideoId) {
+      return res.status(400).json({
+        success: false,
+        message: 'No video upload was initiated for this lesson',
+      });
+    }
+
+    // Update status to uploaded (Bunny will start encoding)
+    const updatedLesson = await prisma.lesson.update({
+      where: { id },
+      data: { videoStatus: 'uploaded' },
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Video upload confirmed. Encoding will begin shortly.',
+      data: {
+        lessonId: updatedLesson.id,
+        bunnyVideoId: updatedLesson.bunnyVideoId,
+        videoStatus: updatedLesson.videoStatus,
+        thumbnailUrl: updatedLesson.thumbnailUrl,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getLessonsByModule,
   getLessonById,
@@ -545,4 +672,6 @@ module.exports = {
   uploadLessonVideo,
   getLessonVideoUrl,
   getLessonVideoStatus,
+  createVideoUpload,
+  confirmVideoUpload,
 };
