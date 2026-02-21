@@ -15,6 +15,8 @@ const {
   purchaseCourse,
   getCheckoutDetails,
   enrollInAllCourses,
+  createCheckoutSession,
+  getEnrollmentBySessionId,
 } = require('../controllers/enrollment.controller');
 const { verifyAdmin, verifyToken } = require('../middleware/auth');
 
@@ -124,6 +126,63 @@ router.get('/all-courses', verifyToken, getAllCoursesWithStatus);
  *         description: Course not found
  */
 router.get('/checkout/:courseId', verifyToken, getCheckoutDetails);
+
+/**
+ * @swagger
+ * /api/enrollments/create-checkout-session:
+ *   post:
+ *     summary: Create Stripe Checkout Session for course purchase (or enroll for free courses)
+ *     tags: [Enrollments]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - courseId
+ *             properties:
+ *               courseId:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Checkout session created - returns sessionUrl for redirect to Stripe
+ *       201:
+ *         description: Free course - enrolled directly without payment
+ *       404:
+ *         description: Course not found
+ *       409:
+ *         description: Already enrolled in this course
+ *       503:
+ *         description: Payment service not configured
+ */
+router.post('/create-checkout-session', verifyToken, createCheckoutSession);
+
+/**
+ * @swagger
+ * /api/enrollments/session/{sessionId}:
+ *   get:
+ *     summary: Get enrollment by Stripe session ID (for post-payment verification)
+ *     tags: [Enrollments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: sessionId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Enrollment found
+ *       404:
+ *         description: Enrollment not yet created (webhook may still be processing)
+ *       403:
+ *         description: Access denied - enrollment belongs to different user
+ */
+router.get('/session/:sessionId', verifyToken, getEnrollmentBySessionId);
 
 /**
  * @swagger

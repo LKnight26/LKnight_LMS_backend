@@ -54,6 +54,16 @@ app.use(cors({
   origin: allowedOrigins,
   credentials: true
 }));
+
+// ============================================
+// STRIPE WEBHOOK (must be before express.json - needs raw body for signature verification)
+// ============================================
+const { handleStripeWebhook } = require('./src/controllers/enrollment.controller');
+app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), handleStripeWebhook);
+
+const { handleBunnyWebhook } = require('./src/controllers/bunnyWebhook.controller');
+app.post('/api/webhooks/bunny', express.raw({ type: 'application/json' }), handleBunnyWebhook);
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 

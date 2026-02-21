@@ -1,4 +1,5 @@
 const prisma = require('../config/db');
+const bunnyService = require('../services/bunny.service');
 
 /**
  * @desc    Get all lessons for a module
@@ -82,9 +83,44 @@ const getLessonById = async (req, res, next) => {
       });
     }
 
+    // Auto-sync video status from Bunny if still processing (webhooks can't reach localhost)
+    if (lesson.bunnyVideoId && lesson.videoStatus && lesson.videoStatus !== 'finished' && lesson.videoStatus !== 'none' && lesson.videoStatus !== 'failed') {
+      try {
+        const bunnyVideo = await bunnyService.getVideo(lesson.bunnyVideoId);
+        const liveStatus = bunnyService.mapWebhookStatus(bunnyVideo.status);
+        if (liveStatus !== lesson.videoStatus) {
+          const updateData = { videoStatus: liveStatus };
+          if (liveStatus === 'finished' && bunnyVideo.length) {
+            updateData.duration = Math.round(bunnyVideo.length);
+            updateData.thumbnailUrl = bunnyService.getThumbnailUrl(lesson.bunnyVideoId);
+          }
+          await prisma.lesson.update({ where: { id }, data: updateData });
+          lesson.videoStatus = liveStatus;
+          if (updateData.duration) lesson.duration = updateData.duration;
+          if (updateData.thumbnailUrl) lesson.thumbnailUrl = updateData.thumbnailUrl;
+        }
+      } catch (err) {
+        console.warn('[LESSON] Failed to sync Bunny video status:', err.message);
+      }
+    }
+
+    // Include signed embed URL if Bunny video is ready
+    let embedUrl = null;
+    if (lesson.bunnyVideoId && lesson.videoStatus === 'finished') {
+      try {
+        const signed = bunnyService.generateSignedEmbedUrl(lesson.bunnyVideoId);
+        embedUrl = signed.url;
+      } catch (err) {
+        console.warn('[LESSON] Failed to generate embed URL:', err.message);
+      }
+    }
+
     res.status(200).json({
       success: true,
-      data: lesson,
+      data: {
+        ...lesson,
+        embedUrl,
+      },
     });
   } catch (error) {
     next(error);
@@ -236,6 +272,15 @@ const deleteLesson = async (req, res, next) => {
       });
     }
 
+    // Clean up Bunny Stream video if it exists
+    if (lesson.bunnyVideoId) {
+      try {
+        await bunnyService.deleteVideo(lesson.bunnyVideoId);
+      } catch (err) {
+        console.warn('[LESSON] Failed to delete Bunny video:', err.message);
+      }
+    }
+
     // Delete lesson
     await prisma.lesson.delete({
       where: { id },
@@ -313,6 +358,183 @@ const reorderLessons = async (req, res, next) => {
   }
 };
 
+/**
+ * @desc    Upload video to Bunny Stream for a lesson
+ * @route   POST /api/lessons/:id/video
+ * @access  Admin/Instructor
+ */
+const uploadLessonVideo = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No video file provided',
+      });
+    }
+
+    // Check lesson exists
+    const lesson = await prisma.lesson.findUnique({ where: { id } });
+    if (!lesson) {
+      return res.status(404).json({
+        success: false,
+        message: 'Lesson not found',
+      });
+    }
+
+    // If lesson already has a Bunny video, delete the old one
+    if (lesson.bunnyVideoId) {
+      try {
+        await bunnyService.deleteVideo(lesson.bunnyVideoId);
+      } catch (err) {
+        console.warn('[LESSON] Failed to delete old Bunny video:', err.message);
+      }
+    }
+
+    // Step 1: Create video entry in Bunny
+    const bunnyVideo = await bunnyService.createVideo(lesson.title);
+
+    // Step 2: Upload the file buffer to Bunny
+    await bunnyService.uploadVideo(bunnyVideo.guid, req.file.buffer);
+
+    // Step 3: Update lesson in database
+    const updatedLesson = await prisma.lesson.update({
+      where: { id },
+      data: {
+        bunnyVideoId: bunnyVideo.guid,
+        bunnyLibraryId: String(bunnyVideo.videoLibraryId),
+        videoStatus: 'uploaded',
+        thumbnailUrl: bunnyService.getThumbnailUrl(bunnyVideo.guid),
+        // Clear deprecated Base64 content
+        content: null,
+        contentType: null,
+      },
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Video uploaded successfully. Encoding will begin shortly.',
+      data: {
+        lessonId: updatedLesson.id,
+        bunnyVideoId: updatedLesson.bunnyVideoId,
+        videoStatus: updatedLesson.videoStatus,
+        thumbnailUrl: updatedLesson.thumbnailUrl,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Get signed video embed URL for playback
+ * @route   GET /api/lessons/:id/video-url
+ * @access  Authenticated
+ */
+const getLessonVideoUrl = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const lesson = await prisma.lesson.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        bunnyVideoId: true,
+        videoStatus: true,
+        thumbnailUrl: true,
+      },
+    });
+
+    if (!lesson) {
+      return res.status(404).json({
+        success: false,
+        message: 'Lesson not found',
+      });
+    }
+
+    if (!lesson.bunnyVideoId) {
+      return res.status(404).json({
+        success: false,
+        message: 'No video associated with this lesson',
+      });
+    }
+
+    // Generate signed embed URL (1-hour expiry)
+    const { url, expires } = bunnyService.generateSignedEmbedUrl(
+      lesson.bunnyVideoId,
+      3600
+    );
+
+    res.status(200).json({
+      success: true,
+      data: {
+        embedUrl: url,
+        expires,
+        videoStatus: lesson.videoStatus,
+        thumbnailUrl: lesson.thumbnailUrl,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Get video encoding status
+ * @route   GET /api/lessons/:id/video-status
+ * @access  Admin/Instructor
+ */
+const getLessonVideoStatus = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    const lesson = await prisma.lesson.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        bunnyVideoId: true,
+        videoStatus: true,
+        thumbnailUrl: true,
+      },
+    });
+
+    if (!lesson) {
+      return res.status(404).json({
+        success: false,
+        message: 'Lesson not found',
+      });
+    }
+
+    // Fetch live encoding progress from Bunny if not yet finished
+    let live = null;
+    if (lesson.bunnyVideoId && lesson.videoStatus !== 'finished' && lesson.videoStatus !== 'none') {
+      try {
+        const bunnyVideo = await bunnyService.getVideo(lesson.bunnyVideoId);
+        live = {
+          status: bunnyVideo.status,
+          encodeProgress: bunnyVideo.encodeProgress,
+          length: bunnyVideo.length,
+        };
+      } catch (err) {
+        console.warn('[LESSON] Failed to fetch live video status:', err.message);
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      data: {
+        videoStatus: lesson.videoStatus,
+        bunnyVideoId: lesson.bunnyVideoId,
+        thumbnailUrl: lesson.thumbnailUrl,
+        live,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getLessonsByModule,
   getLessonById,
@@ -320,4 +542,7 @@ module.exports = {
   updateLesson,
   deleteLesson,
   reorderLessons,
+  uploadLessonVideo,
+  getLessonVideoUrl,
+  getLessonVideoStatus,
 };
