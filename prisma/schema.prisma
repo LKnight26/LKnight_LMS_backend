@@ -33,6 +33,11 @@ model User {
   // Relations
   enrollments      Enrollment[]
   coursesCreated   Course[]     @relation("InstructorCourses")
+
+  // Vault relations
+  vaultDiscussions VaultDiscussion[] @relation("UserDiscussions")
+  vaultComments    VaultComment[]    @relation("UserComments")
+  vaultLikes       VaultLike[]       @relation("UserLikes")
 }
 
 model Admin {
@@ -258,6 +263,79 @@ model Settings {
   marketingEmails         Boolean  @default(false)
   maintenanceMode         Boolean  @default(false)
   updatedAt               DateTime @updatedAt
+}
+
+// ============================================
+// VAULT (Anonymous Discussion Forum)
+// ============================================
+
+model VaultDiscussion {
+  id          String   @id @default(uuid())
+  title       String
+  description String   @db.Text
+  category    String   // e.g. "team-wellness", "career-growth"
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Author — stored for moderation but never exposed for regular users
+  userId String
+  user   User   @relation("UserDiscussions", fields: [userId], references: [id], onDelete: Cascade)
+
+  // Relations
+  comments VaultComment[]
+  likes    VaultLike[]
+
+  @@index([userId])
+  @@index([category])
+  @@index([createdAt])
+}
+
+model VaultComment {
+  id        String   @id @default(uuid())
+  content   String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Author
+  userId String
+  user   User   @relation("UserComments", fields: [userId], references: [id], onDelete: Cascade)
+
+  // Parent discussion
+  discussionId String
+  discussion   VaultDiscussion @relation(fields: [discussionId], references: [id], onDelete: Cascade)
+
+  // Self-referencing for nested replies
+  parentId String?
+  parent   VaultComment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies  VaultComment[] @relation("CommentReplies")
+
+  likes VaultLike[]
+
+  @@index([userId])
+  @@index([discussionId])
+  @@index([parentId])
+  @@index([createdAt])
+}
+
+model VaultLike {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+
+  userId String
+  user   User   @relation("UserLikes", fields: [userId], references: [id], onDelete: Cascade)
+
+  // Polymorphic — exactly one of these should be set
+  discussionId String?
+  discussion   VaultDiscussion? @relation(fields: [discussionId], references: [id], onDelete: Cascade)
+
+  commentId String?
+  comment   VaultComment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  // Prevent duplicate likes
+  @@unique([userId, discussionId])
+  @@unique([userId, commentId])
+  @@index([discussionId])
+  @@index([commentId])
 }
 
 // ============================================
