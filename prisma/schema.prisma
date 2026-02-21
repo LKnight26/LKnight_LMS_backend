@@ -341,6 +341,27 @@ model VaultLike {
 }
 
 // ============================================
+// CONTACT MESSAGES
+// ============================================
+
+model ContactMessage {
+  id        String   @id @default(uuid())
+  firstName String
+  lastName  String?
+  email     String
+  phone     String?
+  subject   String   @default("general")
+  message   String
+  status    String   @default("NEW") // NEW, READ, REPLIED, ARCHIVED
+  adminNote String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+// ============================================
 // ENUMS
 // ============================================
 
