@@ -559,9 +559,10 @@ const getMyEnrollments = async (req, res, next) => {
           level: e.course.level,
           price: e.course.price,
           category: e.course.category,
-          instructor: e.course.instructor
-            ? `${e.course.instructor.firstName} ${e.course.instructor.lastName}`
-            : null,
+          instructor: e.course.instructorName
+            || (e.course.instructor
+              ? `${e.course.instructor.firstName} ${e.course.instructor.lastName}`
+              : null),
           moduleCount: e.course._count.modules,
           lessonCount: totalLessons,
           enrollments: e.course._count.enrollments,
@@ -696,9 +697,10 @@ const getAllCoursesWithStatus = async (req, res, next) => {
         price: course.price,
         status: course.status,
         category: course.category,
-        instructor: course.instructor
-          ? `${course.instructor.firstName} ${course.instructor.lastName}`
-          : null,
+        instructor: course.instructorName
+          || (course.instructor
+            ? `${course.instructor.firstName} ${course.instructor.lastName}`
+            : null),
         moduleCount: course._count.modules,
         lessonCount: totalLessons,
         enrollments: course._count.enrollments,
@@ -791,9 +793,10 @@ const purchaseCourse = async (req, res, next) => {
           slug: course.slug,
           thumbnail: course.thumbnail,
           price: course.price,
-          instructor: course.instructor
-            ? `${course.instructor.firstName} ${course.instructor.lastName}`
-            : null,
+          instructor: course.instructorName
+            || (course.instructor
+              ? `${course.instructor.firstName} ${course.instructor.lastName}`
+              : null),
         },
       },
     });
@@ -866,9 +869,10 @@ const getCheckoutDetails = async (req, res, next) => {
         level: course.level,
         price: course.price,
         category: course.category,
-        instructor: course.instructor
-          ? `${course.instructor.firstName} ${course.instructor.lastName}`
-          : null,
+        instructor: course.instructorName
+          || (course.instructor
+            ? `${course.instructor.firstName} ${course.instructor.lastName}`
+            : null),
         moduleCount: course.modules.length,
         lessonCount: totalLessons,
         enrollments: course._count.enrollments,
@@ -1079,9 +1083,11 @@ const createCheckoutSession = async (req, res, next) => {
             currency: 'usd',
             product_data: {
               name: course.title,
-              description: course.instructor
-                ? `By ${course.instructor.firstName} ${course.instructor.lastName}`
-                : 'LKnight Learning Hub Course',
+              description: course.instructorName
+                ? `By ${course.instructorName}`
+                : (course.instructor
+                  ? `By ${course.instructor.firstName} ${course.instructor.lastName}`
+                  : 'LKnight Learning Hub Course'),
             },
             unit_amount: Math.round(course.price * 100), // Stripe expects cents
           },

@@ -96,6 +96,7 @@ const getAllCourses = async (req, res, next) => {
       slug: course.slug,
       summary: course.summary,
       thumbnail: course.thumbnail,
+      instructorName: course.instructorName,
       price: course.price,
       level: capitalize(course.level),
       status: capitalize(course.status),
@@ -224,6 +225,7 @@ const createCourse = async (req, res, next) => {
       summary,
       description,
       thumbnail,
+      instructorName,
       categoryId,
       category: categoryName, // Frontend may send category name instead of ID
       level = 'BEGINNER',
@@ -333,6 +335,7 @@ const createCourse = async (req, res, next) => {
         summary: summary?.trim() || null,
         description: description?.trim() || null,
         thumbnail: thumbnail || null,
+        instructorName: instructorName?.trim() || null,
         categoryId: resolvedCategoryId,
         instructorId: resolvedInstructorId,
         level: level.toUpperCase(),
@@ -378,6 +381,7 @@ const updateCourse = async (req, res, next) => {
       summary,
       description,
       thumbnail,
+      instructorName,
       categoryId,
       level,
       price,
@@ -430,6 +434,10 @@ const updateCourse = async (req, res, next) => {
 
     if (thumbnail !== undefined) {
       updateData.thumbnail = thumbnail || null;
+    }
+
+    if (instructorName !== undefined) {
+      updateData.instructorName = instructorName?.trim() || null;
     }
 
     if (categoryId) {

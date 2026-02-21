@@ -76,6 +76,7 @@ model Course {
   summary      String?
   description  String?
   thumbnail    String?
+  instructorName String?
   price        Float        @default(0)
   level        CourseLevel  @default(BEGINNER)
   status       CourseStatus @default(DRAFT)
