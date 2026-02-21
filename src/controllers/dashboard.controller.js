@@ -559,6 +559,46 @@ const getRevenueByCategory = async (req, res, next) => {
   }
 };
 
+/**
+ * @desc    Get monthly enrollment chart data
+ * @route   GET /api/admin/analytics/enrollment-chart
+ * @access  Admin
+ */
+const getEnrollmentChart = async (req, res, next) => {
+  try {
+    const { months = 12 } = req.query;
+
+    const chartData = [];
+    const now = new Date();
+
+    for (let i = parseInt(months) - 1; i >= 0; i--) {
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const endOfMonth = new Date(now.getFullYear(), now.getMonth() - i + 1, 0);
+
+      const count = await prisma.enrollment.count({
+        where: {
+          enrolledAt: {
+            gte: startOfMonth,
+            lte: endOfMonth,
+          },
+        },
+      });
+
+      chartData.push({
+        label: startOfMonth.toLocaleString('default', { month: 'short' }),
+        value: count,
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: chartData,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getDashboardStats,
   getRevenueChart,
@@ -568,4 +608,5 @@ module.exports = {
   getAnalyticsOverview,
   getEnrollmentsByCourse,
   getRevenueByCategory,
+  getEnrollmentChart,
 };

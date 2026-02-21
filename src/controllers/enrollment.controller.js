@@ -1172,6 +1172,13 @@ const handleStripeWebhook = async (req, res) => {
       });
 
       if (existingEnrollment) {
+        // Don't reactivate a refunded enrollment via a stale webhook
+        if (existingEnrollment.status === 'REFUNDED') {
+          console.warn('[STRIPE WEBHOOK] Skipping re-enrollment on refunded enrollment:',
+            existingEnrollment.id, 'session:', session.id);
+          return res.status(200).json({ received: true });
+        }
+
         // Update existing enrollment with Stripe payment info
         await prisma.enrollment.update({
           where: { id: existingEnrollment.id },
@@ -1263,9 +1270,17 @@ const handleStripeWebhook = async (req, res) => {
 
     } catch (dbError) {
       console.error('[STRIPE WEBHOOK] Database error:', session.id, dbError);
-      // Return 200 to prevent Stripe from retrying indefinitely
-      return res.status(200).json({ received: true, error: 'Database error logged' });
+      // Return 500 so Stripe retries with exponential backoff (~3 days)
+      // Idempotency check (stripeSessionId unique) prevents duplicates on retry
+      return res.status(500).json({ error: 'Database error - will retry' });
     }
+  }
+
+  // Handle expired checkout sessions (user abandoned payment)
+  if (event.type === 'checkout.session.expired') {
+    const session = event.data.object;
+    console.log('[STRIPE WEBHOOK] checkout.session.expired:', session.id,
+      'userId:', session.metadata?.userId, 'courseId:', session.metadata?.courseId);
   }
 
   res.status(200).json({ received: true });

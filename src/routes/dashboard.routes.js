@@ -9,6 +9,7 @@ const {
   getAnalyticsOverview,
   getEnrollmentsByCourse,
   getRevenueByCategory,
+  getEnrollmentChart,
 } = require('../controllers/dashboard.controller');
 const { verifyAdmin } = require('../middleware/auth');
 
@@ -187,5 +188,25 @@ router.get('/analytics/enrollments-by-course', getEnrollmentsByCourse);
  *         description: Revenue by category data
  */
 router.get('/analytics/revenue-by-category', getRevenueByCategory);
+
+/**
+ * @swagger
+ * /api/admin/analytics/enrollment-chart:
+ *   get:
+ *     summary: Get monthly enrollment chart data
+ *     tags: [Analytics]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: months
+ *         schema:
+ *           type: integer
+ *           default: 12
+ *     responses:
+ *       200:
+ *         description: Monthly enrollment chart data
+ */
+router.get('/analytics/enrollment-chart', getEnrollmentChart);
 
 module.exports = router;
