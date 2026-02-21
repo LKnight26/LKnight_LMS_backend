@@ -588,20 +588,26 @@ const getUserDashboardStats = async (req, res, next) => {
   try {
     const userId = req.userId;
 
+    // Exclude REFUNDED enrollments from all stats
+    const activeWhere = { userId, status: { not: 'REFUNDED' } };
+
     const [
       totalEnrolled,
       inProgress,
       completed,
-      totalLessonsCompleted,
+      avgResult,
     ] = await Promise.all([
-      prisma.enrollment.count({ where: { userId } }),
+      // Total active enrollments (PENDING + COMPLETED, excludes REFUNDED)
+      prisma.enrollment.count({ where: activeWhere }),
+      // In Progress = PENDING status (not yet completed)
       prisma.enrollment.count({
-        where: { userId, status: 'PENDING', progress: { gt: 0 } },
+        where: { userId, status: 'PENDING' },
       }),
+      // Completed courses
       prisma.enrollment.count({ where: { userId, status: 'COMPLETED' } }),
-      // For now, estimate lessons completed based on progress
+      // Average progress across active enrollments only
       prisma.enrollment.aggregate({
-        where: { userId },
+        where: activeWhere,
         _avg: { progress: true },
       }),
     ]);
@@ -612,7 +618,7 @@ const getUserDashboardStats = async (req, res, next) => {
         totalEnrolled,
         inProgress,
         completed,
-        avgProgress: Math.round(totalLessonsCompleted._avg.progress || 0),
+        avgProgress: Math.round(avgResult._avg.progress || 0),
       },
     });
   } catch (error) {

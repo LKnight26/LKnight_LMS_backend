@@ -7,17 +7,14 @@ const prisma = require('../config/db');
 /**
  * Returns display author info based on role.
  * - If the author is ADMIN → show "Admin"
- * - If the author is the requesting user → show "You"
- * - Otherwise → show "Anonymous"
+ * - All other users (including self) → show "Anonymous"
+ * - isOwn flag is set so the user can delete their own posts
  */
 const getAuthorDisplay = (authorId, authorRole, requestingUserId) => {
   if (authorRole === 'ADMIN') {
     return { displayName: 'Admin', isAdmin: true, isOwn: authorId === requestingUserId };
   }
-  if (authorId === requestingUserId) {
-    return { displayName: 'You', isAdmin: false, isOwn: true };
-  }
-  return { displayName: 'Anonymous', isAdmin: false, isOwn: false };
+  return { displayName: 'Anonymous', isAdmin: false, isOwn: authorId === requestingUserId };
 };
 
 // ============================================
@@ -168,7 +165,7 @@ const createDiscussion = async (req, res, next) => {
         description: discussion.description,
         category: discussion.category,
         createdAt: discussion.createdAt,
-        author: isAdmin ? 'Admin' : 'You',
+        author: isAdmin ? 'Admin' : 'Anonymous',
         isAdmin,
         isOwn: true,
         likesCount: 0,
@@ -427,7 +424,7 @@ const createComment = async (req, res, next) => {
         id: comment.id,
         content: comment.content,
         createdAt: comment.createdAt,
-        author: isAdmin ? 'Admin' : 'You',
+        author: isAdmin ? 'Admin' : 'Anonymous',
         isAdmin,
         isOwn: true,
         likesCount: 0,
