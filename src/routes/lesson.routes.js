@@ -7,8 +7,12 @@ const {
   updateLesson,
   deleteLesson,
   reorderLessons,
+  uploadLessonVideo,
+  getLessonVideoUrl,
+  getLessonVideoStatus,
 } = require('../controllers/lesson.controller');
-const { verifyInstructorOrAdmin } = require('../middleware/auth');
+const { verifyToken, verifyInstructorOrAdmin } = require('../middleware/auth');
+const { uploadVideo } = require('../middleware/upload');
 
 /**
  * @swagger
@@ -207,5 +211,83 @@ standaloneRouter.put('/:id', verifyInstructorOrAdmin, updateLesson);
  *         description: Lesson not found
  */
 standaloneRouter.delete('/:id', verifyInstructorOrAdmin, deleteLesson);
+
+/**
+ * @swagger
+ * /api/lessons/{id}/video:
+ *   post:
+ *     summary: Upload video to Bunny Stream for a lesson
+ *     tags: [Lessons]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               video:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       200:
+ *         description: Video uploaded successfully
+ *       400:
+ *         description: No video file provided
+ *       404:
+ *         description: Lesson not found
+ */
+standaloneRouter.post('/:id/video', verifyInstructorOrAdmin, uploadVideo.single('video'), uploadLessonVideo);
+
+/**
+ * @swagger
+ * /api/lessons/{id}/video-url:
+ *   get:
+ *     summary: Get signed video embed URL for playback
+ *     tags: [Lessons]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Signed embed URL
+ *       404:
+ *         description: Lesson or video not found
+ */
+standaloneRouter.get('/:id/video-url', verifyToken, getLessonVideoUrl);
+
+/**
+ * @swagger
+ * /api/lessons/{id}/video-status:
+ *   get:
+ *     summary: Get video encoding status
+ *     tags: [Lessons]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Video encoding status
+ *       404:
+ *         description: Lesson not found
+ */
+standaloneRouter.get('/:id/video-status', verifyToken, getLessonVideoStatus);
 
 module.exports.standaloneRouter = standaloneRouter;
