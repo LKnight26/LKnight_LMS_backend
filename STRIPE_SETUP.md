@@ -85,8 +85,8 @@ Open `LKnight-Lms-backend/.env` and add your Stripe credentials:
 
 ```env
 # Stripe Configuration
-STRIPE_SECRET_KEY=sk_test_xxxxxxxxxxxxxxxxxxxxxxxx
-STRIPE_WEBHOOK_SECRET=whsec_xxxxxxxxxxxxxxxxxxxxxxxx
+STRIPE_SECRET_KEY=[REDACTED]
+STRIPE_WEBHOOK_SECRET=[REDACTED]
 ```
 
 Replace:
@@ -154,8 +154,8 @@ When deploying to Railway, add these environment variables:
 
 | Variable | Value |
 |---|---|
-| `STRIPE_SECRET_KEY` | `sk_live_...` (your LIVE secret key) |
-| `STRIPE_WEBHOOK_SECRET` | `whsec_...` (from the production webhook endpoint) |
+| `STRIPE_SECRET_KEY` | `` (your LIVE secret key) |
+| `STRIPE_WEBHOOK_SECRET` | `` (from the production webhook endpoint) |
 
 **Important production steps:**
 1. Switch Stripe Dashboard from **Test mode** to **Live mode**
