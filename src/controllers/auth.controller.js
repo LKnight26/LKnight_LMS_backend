@@ -8,8 +8,8 @@ const nodemailer = require('nodemailer');
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
 // Helper: Generate JWT token
-const generateToken = (userId) => {
-  return jwt.sign({ id: userId }, process.env.JWT_SECRET, {
+const generateToken = (userId, role) => {
+  return jwt.sign({ id: userId, role }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRES_IN || '7d',
   });
 };
@@ -66,7 +66,7 @@ const signup = async (req, res, next) => {
       select: { id: true, email: true, firstName: true, lastName: true, role: true, status: true, accessAll: true, createdAt: true },
     });
 
-    const token = generateToken(user.id);
+    const token = generateToken(user.id, user.role);
 
     res.status(201).json({
       success: true,
@@ -106,7 +106,7 @@ const signin = async (req, res, next) => {
       });
     }
 
-    const token = generateToken(user.id);
+    const token = generateToken(user.id, user.role);
 
     res.status(200).json({
       success: true,
@@ -251,7 +251,7 @@ const googleLogin = async (req, res, next) => {
       });
     }
 
-    const token = generateToken(user.id);
+    const token = generateToken(user.id, user.role);
 
     res.status(200).json({
       success: true,

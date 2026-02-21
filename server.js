@@ -34,6 +34,7 @@ const teamRoutes = require('./src/routes/team.routes');
 const testimonialRoutes = require('./src/routes/testimonial.routes');
 const contactRoutes = require('./src/routes/contact.routes');
 const vaultRoutes = require('./src/routes/vault.routes');
+const settingsRoutes = require('./src/routes/settings.routes');
 const {
   courseDocumentRouter,
   moduleDocumentRouter,
@@ -148,6 +149,11 @@ app.use('/api/contact', contactRoutes);
 // VAULT ROUTES
 // ============================================
 app.use('/api/vault', vaultRoutes);
+
+// ============================================
+// SETTINGS ROUTES
+// ============================================
+app.use('/api/settings', settingsRoutes);
 
 // Error handling middleware
 app.use(errorHandler);

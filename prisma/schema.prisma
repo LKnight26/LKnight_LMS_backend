@@ -262,6 +262,7 @@ model Settings {
   enrollmentNotifications Boolean  @default(true)
   marketingEmails         Boolean  @default(false)
   maintenanceMode         Boolean  @default(false)
+  hiddenPages             String[] @default([])
   updatedAt               DateTime @updatedAt
 }
 
