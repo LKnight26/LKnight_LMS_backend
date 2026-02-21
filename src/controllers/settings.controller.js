@@ -31,11 +31,11 @@ const getPublicSettings = async (req, res, next) => {
   try {
     let settings = await prisma.settings.findUnique({
       where: { id: 'default' },
-      select: { hiddenPages: true },
+      select: { hiddenPages: true, maintenanceMode: true },
     });
 
     if (!settings) {
-      settings = { hiddenPages: [] };
+      settings = { hiddenPages: [], maintenanceMode: false };
     }
 
     res.json({ success: true, data: settings });
