@@ -1,4 +1,6 @@
 const prisma = require('../config/db');
+const stripe = require('../config/stripe');
+const nodemailer = require('nodemailer');
 
 /**
  * Capitalize first letter, lowercase rest (e.g., "PENDING" -> "Pending")
@@ -937,6 +939,378 @@ const enrollInAllCourses = async (req, res, next) => {
   }
 };
 
+/**
+ * Helper: Send email using SMTP (same pattern as contact.controller)
+ */
+const sendPaymentEmail = async (to, subject, html) => {
+  if (!process.env.SMTP_HOST || !process.env.SMTP_USER) return;
+
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: parseInt(process.env.SMTP_PORT) || 587,
+    secure: false,
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+  });
+
+  await transporter.sendMail({
+    from: `"LKnight Learning Hub" <${process.env.FROM_EMAIL || 'noreply@lknightproductions.com'}>`,
+    to,
+    subject,
+    html,
+  });
+};
+
+/**
+ * @desc    Create Stripe Checkout Session for course purchase
+ * @route   POST /api/enrollments/create-checkout-session
+ * @access  User
+ */
+const createCheckoutSession = async (req, res, next) => {
+  try {
+    const userId = req.userId;
+    const { courseId } = req.body;
+
+    if (!courseId) {
+      return res.status(400).json({
+        success: false,
+        message: 'courseId is required',
+      });
+    }
+
+    // Check if course exists and is published
+    const course = await prisma.course.findUnique({
+      where: { id: courseId },
+      include: {
+        instructor: { select: { firstName: true, lastName: true } },
+      },
+    });
+
+    if (!course) {
+      return res.status(404).json({
+        success: false,
+        message: 'Course not found',
+      });
+    }
+
+    if (course.status !== 'PUBLISHED') {
+      return res.status(400).json({
+        success: false,
+        message: 'This course is not available for enrollment',
+      });
+    }
+
+    // Check if already enrolled
+    const existingEnrollment = await prisma.enrollment.findUnique({
+      where: {
+        userId_courseId: { userId, courseId },
+      },
+    });
+
+    if (existingEnrollment) {
+      return res.status(409).json({
+        success: false,
+        message: 'You are already enrolled in this course',
+      });
+    }
+
+    // Get user info
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, firstName: true, lastName: true },
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    // FREE COURSE: Enroll directly without Stripe
+    if (course.price === 0) {
+      const enrollment = await prisma.enrollment.create({
+        data: {
+          userId,
+          courseId,
+          price: 0,
+          status: 'PENDING',
+          progress: 0,
+          paymentMethod: 'free',
+        },
+      });
+
+      return res.status(201).json({
+        success: true,
+        message: 'Successfully enrolled in the free course',
+        data: {
+          enrollmentId: enrollment.id,
+          free: true,
+        },
+      });
+    }
+
+    // PAID COURSE: Verify Stripe is configured
+    if (!stripe) {
+      return res.status(503).json({
+        success: false,
+        message: 'Payment service is not configured. Please contact support.',
+      });
+    }
+
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+
+    // Create Stripe Checkout Session
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      mode: 'payment',
+      customer_email: user.email,
+      line_items: [
+        {
+          price_data: {
+            currency: 'usd',
+            product_data: {
+              name: course.title,
+              description: course.instructor
+                ? `By ${course.instructor.firstName} ${course.instructor.lastName}`
+                : 'LKnight Learning Hub Course',
+            },
+            unit_amount: Math.round(course.price * 100), // Stripe expects cents
+          },
+          quantity: 1,
+        },
+      ],
+      metadata: {
+        userId,
+        courseId,
+        courseTitle: course.title,
+      },
+      success_url: `${frontendUrl}/dashboard/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${frontendUrl}/dashboard/checkout/${courseId}?canceled=true`,
+      payment_intent_data: {
+        receipt_email: user.email,
+      },
+    });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        sessionId: session.id,
+        sessionUrl: session.url,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Handle Stripe webhook events
+ * @route   POST /api/webhooks/stripe
+ * @access  Public (verified via Stripe signature)
+ */
+const handleStripeWebhook = async (req, res) => {
+  const sig = req.headers['stripe-signature'];
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+  if (!webhookSecret) {
+    console.error('[STRIPE WEBHOOK] STRIPE_WEBHOOK_SECRET is not configured');
+    return res.status(500).json({ error: 'Webhook secret not configured' });
+  }
+
+  let event;
+
+  try {
+    event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
+  } catch (err) {
+    console.error('[STRIPE WEBHOOK] Signature verification failed:', err.message);
+    // Return 200 to prevent Stripe from retrying indefinitely on bad signatures
+    return res.status(200).json({ error: 'Signature verification failed' });
+  }
+
+  if (event.type === 'checkout.session.completed') {
+    const session = event.data.object;
+    console.log('[STRIPE WEBHOOK] checkout.session.completed:', session.id);
+
+    try {
+      const { userId, courseId, courseTitle } = session.metadata;
+
+      if (!userId || !courseId) {
+        console.error('[STRIPE WEBHOOK] Missing metadata in session:', session.id);
+        return res.status(200).json({ received: true });
+      }
+
+      // IDEMPOTENCY: Check if this session was already processed
+      const existingBySession = await prisma.enrollment.findUnique({
+        where: { stripeSessionId: session.id },
+      });
+
+      if (existingBySession) {
+        console.log('[STRIPE WEBHOOK] Already processed session:', session.id);
+        return res.status(200).json({ received: true });
+      }
+
+      // DUPLICATE: Check if user already enrolled via another path
+      const existingEnrollment = await prisma.enrollment.findUnique({
+        where: {
+          userId_courseId: { userId, courseId },
+        },
+      });
+
+      if (existingEnrollment) {
+        // Update existing enrollment with Stripe payment info
+        await prisma.enrollment.update({
+          where: { id: existingEnrollment.id },
+          data: {
+            stripeSessionId: session.id,
+            stripePaymentId: session.payment_intent,
+            paymentMethod: 'stripe',
+          },
+        });
+        console.log('[STRIPE WEBHOOK] Updated existing enrollment:', existingEnrollment.id);
+        return res.status(200).json({ received: true });
+      }
+
+      // CREATE ENROLLMENT — use session.amount_total (what user actually paid)
+      const enrollment = await prisma.enrollment.create({
+        data: {
+          userId,
+          courseId,
+          price: session.amount_total ? (session.amount_total / 100) : 0,
+          status: 'PENDING',
+          progress: 0,
+          stripeSessionId: session.id,
+          stripePaymentId: session.payment_intent,
+          paymentMethod: 'stripe',
+        },
+      });
+
+      console.log('[STRIPE WEBHOOK] Enrollment created:', enrollment.id, 'for course:', courseTitle);
+
+      // Send receipt email (non-blocking - don't fail enrollment if email fails)
+      try {
+        const user = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { email: true, firstName: true },
+        });
+
+        if (user) {
+          const amountPaid = (session.amount_total / 100).toFixed(2);
+          await sendPaymentEmail(
+            user.email,
+            `Enrollment Confirmed: ${courseTitle}`,
+            `
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <div style="background: #000E51; padding: 24px; border-radius: 8px 8px 0 0; text-align: center;">
+                  <h2 style="color: white; margin: 0; font-size: 22px;">LKnight Learning Hub</h2>
+                </div>
+                <div style="padding: 24px; border: 1px solid #e5e7eb; border-top: none; border-radius: 0 0 8px 8px;">
+                  <div style="text-align: center; margin-bottom: 20px;">
+                    <div style="width: 50px; height: 50px; background: #dcfce7; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;">
+                      <span style="color: #16a34a; font-size: 24px;">&#10003;</span>
+                    </div>
+                  </div>
+                  <h3 style="color: #000E51; margin: 0 0 16px 0; text-align: center;">Payment Confirmed!</h3>
+                  <p style="color: #374151; margin: 0 0 8px 0;">Hi ${user.firstName},</p>
+                  <p style="color: #374151; margin: 0 0 16px 0;">Your enrollment in <strong>${courseTitle}</strong> has been confirmed.</p>
+                  <div style="background: #f9fafb; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+                    <table style="width: 100%; border-collapse: collapse;">
+                      <tr>
+                        <td style="padding: 4px 0; color: #6b7280; font-size: 14px;">Course</td>
+                        <td style="padding: 4px 0; color: #111827; font-size: 14px; text-align: right; font-weight: 600;">${courseTitle}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 4px 0; color: #6b7280; font-size: 14px;">Amount Paid</td>
+                        <td style="padding: 4px 0; color: #111827; font-size: 14px; text-align: right; font-weight: 600;">$${amountPaid}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 4px 0; color: #6b7280; font-size: 14px;">Payment ID</td>
+                        <td style="padding: 4px 0; color: #111827; font-size: 14px; text-align: right; font-family: monospace;">${session.payment_intent}</td>
+                      </tr>
+                    </table>
+                  </div>
+                  <div style="text-align: center;">
+                    <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/dashboard"
+                       style="display: inline-block; background: #FF6F00; color: white; padding: 12px 32px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px;">
+                      Go to Dashboard
+                    </a>
+                  </div>
+                  <p style="color: #9ca3af; font-size: 12px; margin: 20px 0 0 0; text-align: center;">
+                    If you have any questions, contact us at ${process.env.CONTACT_EMAIL || 'inquiries@lknightproductions.com'}
+                  </p>
+                </div>
+              </div>
+            `
+          );
+        }
+      } catch (emailError) {
+        console.error('[STRIPE WEBHOOK] Receipt email failed:', emailError.message);
+      }
+
+    } catch (dbError) {
+      console.error('[STRIPE WEBHOOK] Database error:', session.id, dbError);
+      // Return 200 to prevent Stripe from retrying indefinitely
+      return res.status(200).json({ received: true, error: 'Database error logged' });
+    }
+  }
+
+  res.status(200).json({ received: true });
+};
+
+/**
+ * @desc    Get enrollment status by Stripe session ID (for success page polling)
+ * @route   GET /api/enrollments/session/:sessionId
+ * @access  User
+ */
+const getEnrollmentBySessionId = async (req, res, next) => {
+  try {
+    const userId = req.userId;
+    const { sessionId } = req.params;
+
+    const enrollment = await prisma.enrollment.findUnique({
+      where: { stripeSessionId: sessionId },
+      include: {
+        course: {
+          select: {
+            id: true,
+            title: true,
+            slug: true,
+            thumbnail: true,
+          },
+        },
+      },
+    });
+
+    if (!enrollment) {
+      return res.status(404).json({
+        success: false,
+        message: 'Enrollment not found. Payment may still be processing.',
+      });
+    }
+
+    // Verify the enrollment belongs to the requesting user
+    if (enrollment.userId !== userId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied',
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: {
+        enrollmentId: enrollment.id,
+        status: enrollment.status,
+        course: enrollment.course,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getAllEnrollments,
   getEnrollmentById,
@@ -952,4 +1326,7 @@ module.exports = {
   purchaseCourse,
   getCheckoutDetails,
   enrollInAllCourses,
+  createCheckoutSession,
+  handleStripeWebhook,
+  getEnrollmentBySessionId,
 };

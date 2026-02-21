@@ -118,12 +118,18 @@ model Lesson {
   title       String
   description String?  @db.Text
   videoUrl    String?
-  content     String?  @db.Text // Base64 encoded video/image content
+  content     String?  @db.Text // Base64 encoded video/image content (deprecated - use Bunny Stream)
   contentType String?  // MIME type (e.g., "video/mp4", "image/jpeg")
   duration    Int      @default(0) // in seconds
   order       Int      @default(0)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  // Bunny Stream fields
+  bunnyVideoId   String?  // Bunny Stream video GUID
+  bunnyLibraryId String?  // Bunny Stream library ID
+  videoStatus    String?  @default("none") // none | uploaded | processing | encoding | finished | failed
+  thumbnailUrl   String?  // Auto-generated thumbnail URL from Bunny
 
   // Relations
   moduleId  String
@@ -131,6 +137,7 @@ model Lesson {
   documents Document[]
 
   @@index([moduleId])
+  @@index([bunnyVideoId])
 }
 
 // ============================================
@@ -138,25 +145,31 @@ model Lesson {
 // ============================================
 
 model Enrollment {
-  id          String           @id @default(uuid())
-  price       Float            @default(0)
-  status      EnrollmentStatus @default(PENDING)
-  progress    Int              @default(0) // percentage 0-100
-  enrolledAt  DateTime         @default(now())
-  completedAt DateTime?
-  updatedAt   DateTime         @updatedAt
+  id               String           @id @default(uuid())
+  price            Float            @default(0)
+  status           EnrollmentStatus @default(PENDING)
+  progress         Int              @default(0) // percentage 0-100
+  enrolledAt       DateTime         @default(now())
+  completedAt      DateTime?
+  updatedAt        DateTime         @updatedAt
+
+  // Stripe payment tracking
+  stripeSessionId  String?          @unique // Stripe Checkout Session ID (cs_xxx)
+  stripePaymentId  String?          @unique // Stripe Payment Intent ID (pi_xxx)
+  paymentMethod    String?                  // "stripe", "free", "manual"
 
   // Relations
-  userId      String
-  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId           String
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  courseId    String
-  course      Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  courseId          String
+  course            Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
 
   @@unique([userId, courseId])
   @@index([userId])
   @@index([courseId])
   @@index([status])
+  @@index([stripeSessionId])
 }
 
 // ============================================
