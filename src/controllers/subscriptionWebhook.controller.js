@@ -6,16 +6,47 @@ const stripe = require('../config/stripe');
  * Stripe may return Unix timestamps (seconds), milliseconds, ISO strings, or undefined.
  */
 const parseStripeDate = (value) => {
-  if (!value) return new Date();
+  if (!value) return null;
   // If it's a number (Unix timestamp in seconds), convert to ms
   if (typeof value === 'number') {
-    // Stripe timestamps are in seconds; if it looks like ms already (> year 2100 in seconds), use as-is
     const ms = value < 1e12 ? value * 1000 : value;
     return new Date(ms);
   }
   // If it's already a string/Date, try to parse
   const d = new Date(value);
-  return isNaN(d.getTime()) ? new Date() : d;
+  return isNaN(d.getTime()) ? null : d;
+};
+
+/**
+ * Extract period dates from a Stripe subscription object.
+ * Newer Stripe API versions (2025+) moved current_period_start/end
+ * from the subscription level to each subscription item.
+ */
+const extractPeriodDates = (stripeSub) => {
+  let periodStart = parseStripeDate(stripeSub.current_period_start);
+  let periodEnd = parseStripeDate(stripeSub.current_period_end);
+
+  // If not found at subscription level, check subscription items
+  if (!periodStart || !periodEnd) {
+    const items = stripeSub.items?.data;
+    if (items && items.length > 0) {
+      const firstItem = items[0];
+      periodStart = periodStart || parseStripeDate(firstItem.current_period_start);
+      periodEnd = periodEnd || parseStripeDate(firstItem.current_period_end);
+    }
+  }
+
+  // Final fallback: use start_date for start, and calculate end as +1 month or +1 year
+  if (!periodStart) {
+    periodStart = parseStripeDate(stripeSub.start_date) || new Date();
+  }
+  if (!periodEnd) {
+    // Default to 1 month from start
+    periodEnd = new Date(periodStart);
+    periodEnd.setMonth(periodEnd.getMonth() + 1);
+  }
+
+  return { periodStart, periodEnd };
 };
 
 /**
@@ -96,18 +127,16 @@ const handleCheckoutCompleted = async (session) => {
   // Retrieve the Stripe subscription for period dates
   let stripeSubDetails;
   try {
-    stripeSubDetails = await stripe.subscriptions.retrieve(stripeSubscriptionId);
+    stripeSubDetails = await stripe.subscriptions.retrieve(stripeSubscriptionId, {
+      expand: ['items.data'],
+    });
   } catch (err) {
     console.error('[SUB WEBHOOK] Failed to retrieve Stripe subscription:', err.message);
     return;
   }
 
-  console.log('[SUB WEBHOOK] Stripe sub period data:', {
-    current_period_start: stripeSubDetails.current_period_start,
-    current_period_end: stripeSubDetails.current_period_end,
-    start_date: stripeSubDetails.start_date,
-    status: stripeSubDetails.status,
-  });
+  const { periodStart, periodEnd } = extractPeriodDates(stripeSubDetails);
+  console.log('[SUB WEBHOOK] Period dates:', { periodStart, periodEnd, status: stripeSubDetails.status });
 
   // Create local subscription record
   const subscription = await prisma.subscription.create({
@@ -118,8 +147,8 @@ const handleCheckoutCompleted = async (session) => {
       billingCycle: billingCycle || 'YEARLY',
       stripeSubscriptionId,
       stripeCustomerId: session.customer,
-      currentPeriodStart: parseStripeDate(stripeSubDetails.current_period_start),
-      currentPeriodEnd: parseStripeDate(stripeSubDetails.current_period_end),
+      currentPeriodStart: periodStart,
+      currentPeriodEnd: periodEnd,
       cancelAtPeriodEnd: false,
       maxUsers: plan.maxUsers,
       organizationName: organizationName || null,
@@ -155,11 +184,13 @@ const handleSubscriptionUpdated = async (stripeSubscription) => {
     trialing: 'TRIALING',
   };
 
+  const { periodStart, periodEnd } = extractPeriodDates(stripeSubscription);
+
   const updateData = {
     status: statusMap[stripeSubscription.status] || subscription.status,
     cancelAtPeriodEnd: stripeSubscription.cancel_at_period_end || false,
-    currentPeriodStart: parseStripeDate(stripeSubscription.current_period_start),
-    currentPeriodEnd: parseStripeDate(stripeSubscription.current_period_end),
+    currentPeriodStart: periodStart,
+    currentPeriodEnd: periodEnd,
   };
 
   // Handle plan change (upgrade/downgrade)
@@ -224,13 +255,16 @@ const handleInvoicePaymentSucceeded = async (invoice) => {
 
   // Retrieve updated subscription from Stripe for new period dates
   try {
-    const stripeSub = await stripe.subscriptions.retrieve(invoice.subscription);
+    const stripeSub = await stripe.subscriptions.retrieve(invoice.subscription, {
+      expand: ['items.data'],
+    });
+    const { periodStart, periodEnd } = extractPeriodDates(stripeSub);
     await prisma.subscription.update({
       where: { id: subscription.id },
       data: {
         status: 'ACTIVE',
-        currentPeriodStart: parseStripeDate(stripeSub.current_period_start),
-        currentPeriodEnd: parseStripeDate(stripeSub.current_period_end),
+        currentPeriodStart: periodStart,
+        currentPeriodEnd: periodEnd,
       },
     });
     console.log('[SUB WEBHOOK] Subscription renewed:', subscription.id);
