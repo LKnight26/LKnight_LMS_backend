@@ -90,6 +90,7 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
     'customer.subscription.deleted',
     'invoice.payment_succeeded',
     'invoice.payment_failed',
+    'invoice.paid',
   ];
 
   try {

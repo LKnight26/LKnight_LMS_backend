@@ -2,6 +2,23 @@ const prisma = require('../config/db');
 const stripe = require('../config/stripe');
 
 /**
+ * Safely parse a Stripe timestamp to a Date object.
+ * Stripe may return Unix timestamps (seconds), milliseconds, ISO strings, or undefined.
+ */
+const parseStripeDate = (value) => {
+  if (!value) return new Date();
+  // If it's a number (Unix timestamp in seconds), convert to ms
+  if (typeof value === 'number') {
+    // Stripe timestamps are in seconds; if it looks like ms already (> year 2100 in seconds), use as-is
+    const ms = value < 1e12 ? value * 1000 : value;
+    return new Date(ms);
+  }
+  // If it's already a string/Date, try to parse
+  const d = new Date(value);
+  return isNaN(d.getTime()) ? new Date() : d;
+};
+
+/**
  * @desc    Handle Stripe webhook events for subscriptions
  * @route   POST /api/webhooks/stripe (dispatched from main webhook handler)
  * @access  Public (verified via Stripe signature)
@@ -14,6 +31,7 @@ const handleSubscriptionWebhook = async (event, res) => {
       await handleCheckoutCompleted(event.data.object);
       break;
     }
+    case 'customer.subscription.created':
     case 'customer.subscription.updated': {
       await handleSubscriptionUpdated(event.data.object);
       break;
@@ -22,6 +40,7 @@ const handleSubscriptionWebhook = async (event, res) => {
       await handleSubscriptionDeleted(event.data.object);
       break;
     }
+    case 'invoice.paid':
     case 'invoice.payment_succeeded': {
       await handleInvoicePaymentSucceeded(event.data.object);
       break;
@@ -83,6 +102,13 @@ const handleCheckoutCompleted = async (session) => {
     return;
   }
 
+  console.log('[SUB WEBHOOK] Stripe sub period data:', {
+    current_period_start: stripeSubDetails.current_period_start,
+    current_period_end: stripeSubDetails.current_period_end,
+    start_date: stripeSubDetails.start_date,
+    status: stripeSubDetails.status,
+  });
+
   // Create local subscription record
   const subscription = await prisma.subscription.create({
     data: {
@@ -92,8 +118,8 @@ const handleCheckoutCompleted = async (session) => {
       billingCycle: billingCycle || 'YEARLY',
       stripeSubscriptionId,
       stripeCustomerId: session.customer,
-      currentPeriodStart: new Date(stripeSubDetails.current_period_start * 1000),
-      currentPeriodEnd: new Date(stripeSubDetails.current_period_end * 1000),
+      currentPeriodStart: parseStripeDate(stripeSubDetails.current_period_start),
+      currentPeriodEnd: parseStripeDate(stripeSubDetails.current_period_end),
       cancelAtPeriodEnd: false,
       maxUsers: plan.maxUsers,
       organizationName: organizationName || null,
@@ -132,8 +158,8 @@ const handleSubscriptionUpdated = async (stripeSubscription) => {
   const updateData = {
     status: statusMap[stripeSubscription.status] || subscription.status,
     cancelAtPeriodEnd: stripeSubscription.cancel_at_period_end || false,
-    currentPeriodStart: new Date(stripeSubscription.current_period_start * 1000),
-    currentPeriodEnd: new Date(stripeSubscription.current_period_end * 1000),
+    currentPeriodStart: parseStripeDate(stripeSubscription.current_period_start),
+    currentPeriodEnd: parseStripeDate(stripeSubscription.current_period_end),
   };
 
   // Handle plan change (upgrade/downgrade)
@@ -203,8 +229,8 @@ const handleInvoicePaymentSucceeded = async (invoice) => {
       where: { id: subscription.id },
       data: {
         status: 'ACTIVE',
-        currentPeriodStart: new Date(stripeSub.current_period_start * 1000),
-        currentPeriodEnd: new Date(stripeSub.current_period_end * 1000),
+        currentPeriodStart: parseStripeDate(stripeSub.current_period_start),
+        currentPeriodEnd: parseStripeDate(stripeSub.current_period_end),
       },
     });
     console.log('[SUB WEBHOOK] Subscription renewed:', subscription.id);
