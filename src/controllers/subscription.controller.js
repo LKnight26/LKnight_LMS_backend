@@ -116,11 +116,28 @@ const createSubscriptionCheckout = async (req, res, next) => {
 
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
 
+    // Find or create Stripe customer to avoid duplicate customer issues
+    let stripeCustomerId;
+    const existingCustomers = await stripe.customers.list({
+      email: user.email,
+      limit: 1,
+    });
+
+    if (existingCustomers.data.length > 0) {
+      stripeCustomerId = existingCustomers.data[0].id;
+    } else {
+      const newCustomer = await stripe.customers.create({
+        email: user.email,
+        name: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
+        metadata: { userId },
+      });
+      stripeCustomerId = newCustomer.id;
+    }
+
     // Create Stripe Checkout Session for subscription
     const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
       mode: 'subscription',
-      customer_email: user.email,
+      customer: stripeCustomerId,
       line_items: [
         {
           price: stripePriceId,
