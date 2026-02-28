@@ -35,6 +35,8 @@ const testimonialRoutes = require('./src/routes/testimonial.routes');
 const contactRoutes = require('./src/routes/contact.routes');
 const vaultRoutes = require('./src/routes/vault.routes');
 const settingsRoutes = require('./src/routes/settings.routes');
+const planRoutes = require('./src/routes/plan.routes');
+const subscriptionRoutes = require('./src/routes/subscription.routes');
 const {
   courseDocumentRouter,
   moduleDocumentRouter,
@@ -61,7 +63,61 @@ app.use(cors({
 // STRIPE WEBHOOK (must be before express.json - needs raw body for signature verification)
 // ============================================
 const { handleStripeWebhook } = require('./src/controllers/enrollment.controller');
-app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), handleStripeWebhook);
+const { handleSubscriptionWebhook } = require('./src/controllers/subscriptionWebhook.controller');
+
+// Unified webhook dispatcher - routes to enrollment or subscription handler based on event type
+app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), async (req, res) => {
+  const sig = req.headers['stripe-signature'];
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  const stripe = require('./src/config/stripe');
+
+  if (!webhookSecret || !stripe) {
+    console.error('[STRIPE WEBHOOK] Webhook secret or Stripe not configured');
+    return res.status(500).json({ error: 'Webhook not configured' });
+  }
+
+  let event;
+  try {
+    event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
+  } catch (err) {
+    console.error('[STRIPE WEBHOOK] Signature verification failed:', err.message);
+    return res.status(200).json({ error: 'Signature verification failed' });
+  }
+
+  const subscriptionEvents = [
+    'customer.subscription.created',
+    'customer.subscription.updated',
+    'customer.subscription.deleted',
+    'invoice.payment_succeeded',
+    'invoice.payment_failed',
+  ];
+
+  try {
+    if (event.type === 'checkout.session.completed') {
+      const session = event.data.object;
+      if (session.mode === 'subscription') {
+        // Route to subscription webhook handler
+        await handleSubscriptionWebhook(event, res);
+      } else {
+        // Route to old enrollment webhook handler (per-course payment - now deprecated)
+        // Return 410 since per-course purchase is disabled
+        console.log('[STRIPE WEBHOOK] Received per-course payment event (deprecated):', session.id);
+      }
+    } else if (subscriptionEvents.includes(event.type)) {
+      await handleSubscriptionWebhook(event, res);
+    } else if (event.type === 'checkout.session.expired') {
+      const session = event.data.object;
+      console.log('[STRIPE WEBHOOK] checkout.session.expired:', session.id);
+    } else {
+      console.log('[STRIPE WEBHOOK] Unhandled event type:', event.type);
+    }
+
+    res.status(200).json({ received: true });
+  } catch (error) {
+    console.error('[STRIPE WEBHOOK] Handler error:', error);
+    res.status(500).json({ error: 'Webhook handler error - will retry' });
+  }
+});
 
 const { handleBunnyWebhook } = require('./src/controllers/bunnyWebhook.controller');
 app.post('/api/webhooks/bunny', express.raw({ type: 'application/json' }), handleBunnyWebhook);
@@ -149,6 +205,12 @@ app.use('/api/contact', contactRoutes);
 // VAULT ROUTES
 // ============================================
 app.use('/api/vault', vaultRoutes);
+
+// ============================================
+// PLAN & SUBSCRIPTION ROUTES
+// ============================================
+app.use('/api/plans', planRoutes);
+app.use('/api/subscriptions', subscriptionRoutes);
 
 // ============================================
 // SETTINGS ROUTES

@@ -1,6 +1,7 @@
 const prisma = require('../config/db');
 const stripe = require('../config/stripe');
 const nodemailer = require('nodemailer');
+const { userHasActiveSubscription } = require('./subscription.controller');
 
 /**
  * Capitalize first letter, lowercase rest (e.g., "PENDING" -> "Pending")
@@ -679,6 +680,9 @@ const getAllCoursesWithStatus = async (req, res, next) => {
 
     const enrollmentMap = new Map(enrollments.map((e) => [e.courseId, e]));
 
+    // Check if user has active subscription (for access to all courses)
+    const hasSubscription = await userHasActiveSubscription(userId);
+
     // Transform courses with enrollment info
     const coursesWithStatus = courses.map((course) => {
       const enrollment = enrollmentMap.get(course.id);
@@ -704,9 +708,9 @@ const getAllCoursesWithStatus = async (req, res, next) => {
         moduleCount: course._count.modules,
         lessonCount: totalLessons,
         enrollments: course._count.enrollments,
-        // Access status
+        // Access status (includes subscription check)
         isEnrolled: !!enrollment,
-        hasAccess: user.accessAll || !!enrollment,
+        hasAccess: user.accessAll || !!enrollment || hasSubscription,
         enrollmentId: enrollment?.id || null,
         progress: enrollment?.progress || 0,
         enrolledAt: enrollment?.enrolledAt || null,
@@ -729,80 +733,12 @@ const getAllCoursesWithStatus = async (req, res, next) => {
  * @route   POST /api/enrollments/purchase/:courseId
  * @access  User
  */
+// === COMMENTED OUT: Per-course purchase flow (replaced by subscription model) ===
 const purchaseCourse = async (req, res, next) => {
-  try {
-    const userId = req.userId;
-    const { courseId } = req.params;
-
-    // Check if course exists and is published
-    const course = await prisma.course.findUnique({
-      where: { id: courseId },
-      include: {
-        category: { select: { name: true } },
-        instructor: { select: { firstName: true, lastName: true } },
-      },
-    });
-
-    if (!course) {
-      return res.status(404).json({
-        success: false,
-        message: 'Course not found',
-      });
-    }
-
-    if (course.status !== 'PUBLISHED') {
-      return res.status(400).json({
-        success: false,
-        message: 'This course is not available for enrollment',
-      });
-    }
-
-    // Check if already enrolled
-    const existingEnrollment = await prisma.enrollment.findUnique({
-      where: {
-        userId_courseId: { userId, courseId },
-      },
-    });
-
-    if (existingEnrollment) {
-      return res.status(409).json({
-        success: false,
-        message: 'You are already enrolled in this course',
-      });
-    }
-
-    // Create enrollment (simulate successful payment)
-    const enrollment = await prisma.enrollment.create({
-      data: {
-        userId,
-        courseId,
-        price: course.price,
-        status: 'PENDING',
-        progress: 0,
-      },
-    });
-
-    res.status(201).json({
-      success: true,
-      message: 'Successfully enrolled in the course',
-      data: {
-        enrollmentId: enrollment.id,
-        course: {
-          id: course.id,
-          title: course.title,
-          slug: course.slug,
-          thumbnail: course.thumbnail,
-          price: course.price,
-          instructor: course.instructorName
-            || (course.instructor
-              ? `${course.instructor.firstName} ${course.instructor.lastName}`
-              : null),
-        },
-      },
-    });
-  } catch (error) {
-    next(error);
-  }
+  return res.status(410).json({
+    success: false,
+    message: 'Per-course purchase is no longer available. Please subscribe to a plan at /pricing.',
+  });
 };
 
 /**
@@ -881,8 +817,8 @@ const getCheckoutDetails = async (req, res, next) => {
           title: m.title,
           lessonCount: m._count.lessons,
         })),
-        // User's access status
-        hasAccess: user.accessAll || !!enrollment,
+        // User's access status (includes subscription check)
+        hasAccess: user.accessAll || !!enrollment || await userHasActiveSubscription(userId),
         isEnrolled: !!enrollment,
         enrollmentId: enrollment?.id || null,
       },
@@ -892,61 +828,12 @@ const getCheckoutDetails = async (req, res, next) => {
   }
 };
 
-/**
- * @desc    Enroll current user in all published courses (temporary for free access)
- * @route   POST /api/enrollments/enroll-all
- * @access  User
- */
+// === COMMENTED OUT: Enroll in all courses (replaced by subscription model) ===
 const enrollInAllCourses = async (req, res, next) => {
-  try {
-    const userId = req.userId;
-
-    // Get all published courses
-    const publishedCourses = await prisma.course.findMany({
-      where: { status: 'PUBLISHED' },
-      select: { id: true, price: true },
-    });
-
-    // Get user's existing enrollments
-    const existingEnrollments = await prisma.enrollment.findMany({
-      where: { userId },
-      select: { courseId: true },
-    });
-
-    const enrolledCourseIds = new Set(existingEnrollments.map((e) => e.courseId));
-
-    // Filter courses not yet enrolled
-    const coursesToEnroll = publishedCourses.filter(
-      (c) => !enrolledCourseIds.has(c.id)
-    );
-
-    if (coursesToEnroll.length === 0) {
-      return res.status(200).json({
-        success: true,
-        message: 'Already enrolled in all available courses',
-        data: { enrolled: 0 },
-      });
-    }
-
-    // Create enrollments for all new courses
-    const enrollments = await prisma.enrollment.createMany({
-      data: coursesToEnroll.map((course) => ({
-        userId,
-        courseId: course.id,
-        price: 0, // Free enrollment for now
-        status: 'PENDING',
-        progress: 0,
-      })),
-    });
-
-    res.status(201).json({
-      success: true,
-      message: `Successfully enrolled in ${enrollments.count} courses`,
-      data: { enrolled: enrollments.count },
-    });
-  } catch (error) {
-    next(error);
-  }
+  return res.status(410).json({
+    success: false,
+    message: 'Bulk enrollment is no longer available. Please subscribe to a plan at /pricing.',
+  });
 };
 
 /**
@@ -973,149 +860,12 @@ const sendPaymentEmail = async (to, subject, html) => {
   });
 };
 
-/**
- * @desc    Create Stripe Checkout Session for course purchase
- * @route   POST /api/enrollments/create-checkout-session
- * @access  User
- */
+// === COMMENTED OUT: Per-course Stripe checkout (replaced by subscription model) ===
 const createCheckoutSession = async (req, res, next) => {
-  try {
-    const userId = req.userId;
-    const { courseId } = req.body;
-
-    if (!courseId) {
-      return res.status(400).json({
-        success: false,
-        message: 'courseId is required',
-      });
-    }
-
-    // Check if course exists and is published
-    const course = await prisma.course.findUnique({
-      where: { id: courseId },
-      include: {
-        instructor: { select: { firstName: true, lastName: true } },
-      },
-    });
-
-    if (!course) {
-      return res.status(404).json({
-        success: false,
-        message: 'Course not found',
-      });
-    }
-
-    if (course.status !== 'PUBLISHED') {
-      return res.status(400).json({
-        success: false,
-        message: 'This course is not available for enrollment',
-      });
-    }
-
-    // Check if already enrolled
-    const existingEnrollment = await prisma.enrollment.findUnique({
-      where: {
-        userId_courseId: { userId, courseId },
-      },
-    });
-
-    if (existingEnrollment) {
-      return res.status(409).json({
-        success: false,
-        message: 'You are already enrolled in this course',
-      });
-    }
-
-    // Get user info
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { email: true, firstName: true, lastName: true },
-    });
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: 'User not found',
-      });
-    }
-
-    // FREE COURSE: Enroll directly without Stripe
-    if (course.price === 0) {
-      const enrollment = await prisma.enrollment.create({
-        data: {
-          userId,
-          courseId,
-          price: 0,
-          status: 'PENDING',
-          progress: 0,
-          paymentMethod: 'free',
-        },
-      });
-
-      return res.status(201).json({
-        success: true,
-        message: 'Successfully enrolled in the free course',
-        data: {
-          enrollmentId: enrollment.id,
-          free: true,
-        },
-      });
-    }
-
-    // PAID COURSE: Verify Stripe is configured
-    if (!stripe) {
-      return res.status(503).json({
-        success: false,
-        message: 'Payment service is not configured. Please contact support.',
-      });
-    }
-
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-
-    // Create Stripe Checkout Session
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
-      mode: 'payment',
-      customer_email: user.email,
-      line_items: [
-        {
-          price_data: {
-            currency: 'usd',
-            product_data: {
-              name: course.title,
-              description: course.instructorName
-                ? `By ${course.instructorName}`
-                : (course.instructor
-                  ? `By ${course.instructor.firstName} ${course.instructor.lastName}`
-                  : 'LKnight Learning Hub Course'),
-            },
-            unit_amount: Math.round(course.price * 100), // Stripe expects cents
-          },
-          quantity: 1,
-        },
-      ],
-      metadata: {
-        userId,
-        courseId,
-        courseTitle: course.title,
-      },
-      success_url: `${frontendUrl}/dashboard/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${frontendUrl}/dashboard/checkout/${courseId}?canceled=true`,
-      payment_intent_data: {
-        receipt_email: user.email,
-      },
-    });
-
-    res.status(200).json({
-      success: true,
-      data: {
-        sessionId: session.id,
-        sessionUrl: session.url,
-      },
-    });
-  } catch (error) {
-    next(error);
-  }
+  return res.status(410).json({
+    success: false,
+    message: 'Per-course purchase is no longer available. Please subscribe to a plan at /pricing.',
+  });
 };
 
 /**

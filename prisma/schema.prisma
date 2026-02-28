@@ -34,6 +34,10 @@ model User {
   enrollments      Enrollment[]
   coursesCreated   Course[]     @relation("InstructorCourses")
 
+  // Subscription relations
+  subscriptions        Subscription[]
+  subscriptionMembers  SubscriptionMember[]
+
   // Vault relations
   vaultDiscussions VaultDiscussion[] @relation("UserDiscussions")
   vaultComments    VaultComment[]    @relation("UserComments")
@@ -176,6 +180,89 @@ model Enrollment {
   @@index([courseId])
   @@index([status])
   @@index([stripeSessionId])
+}
+
+// ============================================
+// PLAN & SUBSCRIPTION MODELS
+// ============================================
+
+model Plan {
+  id                   String   @id @default(uuid())
+  name                 String   @unique
+  slug                 String   @unique
+  description          String?  @db.Text
+  tagline              String?
+  closeLine            String?  @db.Text
+  monthlyPrice         Float?
+  yearlyPrice          Float?
+  maxUsers             Int      @default(1)
+  additionalUserPrice  Float?
+  features             Json     @default("[]") // [{ text: string, included: boolean }]
+  ctaText              String   @default("Get Started")
+  ctaType              CtaType  @default(CHECKOUT)
+  isPopular            Boolean  @default(false)
+  order                Int      @default(0)
+  isActive             Boolean  @default(true)
+  stripeMonthlyPriceId String?
+  stripeYearlyPriceId  String?
+  stripeProductId      String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  // Relations
+  subscriptions        Subscription[]
+
+  @@index([slug])
+  @@index([order])
+  @@index([isActive])
+}
+
+model Subscription {
+  id                   String             @id @default(uuid())
+  status               SubscriptionStatus @default(ACTIVE)
+  billingCycle         BillingCycle       @default(YEARLY)
+  stripeSubscriptionId String?            @unique
+  stripeCustomerId     String?
+  currentPeriodStart   DateTime?
+  currentPeriodEnd     DateTime?
+  cancelAtPeriodEnd    Boolean            @default(false)
+  maxUsers             Int                @default(1)
+  organizationName     String?
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  // Relations
+  userId               String
+  user                 User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  planId               String
+  plan                 Plan               @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  members              SubscriptionMember[]
+
+  @@index([userId])
+  @@index([planId])
+  @@index([status])
+  @@index([stripeSubscriptionId])
+  @@index([stripeCustomerId])
+}
+
+model SubscriptionMember {
+  id             String   @id @default(uuid())
+  role           String   @default("member") // "owner", "admin", "member"
+  joinedAt       DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  subscriptionId String
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, subscriptionId])
+  @@index([userId])
+  @@index([subscriptionId])
 }
 
 // ============================================
@@ -391,4 +478,24 @@ enum EnrollmentStatus {
   PENDING
   COMPLETED
   REFUNDED
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELED
+  PAST_DUE
+  UNPAID
+  TRIALING
+  INCOMPLETE
+  EXPIRED
+}
+
+enum BillingCycle {
+  MONTHLY
+  YEARLY
+}
+
+enum CtaType {
+  CHECKOUT
+  CONTACT_SALES
 }
