@@ -134,10 +134,20 @@ const createSubscriptionCheckout = async (req, res, next) => {
       stripeCustomerId = newCustomer.id;
     }
 
+    // Cancel any incomplete subscriptions to avoid checkout_amount_mismatch
+    const incompleteSubs = await stripe.subscriptions.list({
+      customer: stripeCustomerId,
+      status: 'incomplete',
+    });
+    for (const sub of incompleteSubs.data) {
+      await stripe.subscriptions.cancel(sub.id);
+    }
+
     // Create Stripe Checkout Session for subscription
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       customer: stripeCustomerId,
+      automatic_tax: { enabled: false },
       payment_method_types: ['card'],
       line_items: [
         {
