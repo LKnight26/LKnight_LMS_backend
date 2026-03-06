@@ -48,7 +48,7 @@ const getDiscussions = async (req, res, next) => {
       take: take + 1, // Fetch one extra to check if there's a next page
       orderBy: { createdAt: 'desc' },
       include: {
-        user: { select: { id: true, role: true, name: true } },
+        user: { select: { id: true, role: true, firstName: true, lastName: true } },
         _count: { select: { comments: true, likes: true } },
         likes: {
           where: { userId },
@@ -68,7 +68,7 @@ const getDiscussions = async (req, res, next) => {
     const results = hasMore ? discussions.slice(0, take) : discussions;
 
     const formatted = results.map((d) => {
-      const author = getAuthorDisplay(d.user.id, d.user.role, d.user.name, userId, userRole);
+      const author = getAuthorDisplay(d.user.id, d.user.role, [d.user.firstName, d.user.lastName].filter(Boolean).join(' '), userId, userRole);
       return {
         id: d.id,
         title: d.title,
@@ -109,7 +109,7 @@ const getDiscussionById = async (req, res, next) => {
     const discussion = await prisma.vaultDiscussion.findUnique({
       where: { id },
       include: {
-        user: { select: { id: true, role: true, name: true } },
+        user: { select: { id: true, role: true, firstName: true, lastName: true } },
         _count: { select: { comments: true, likes: true } },
         likes: {
           where: { userId },
@@ -122,7 +122,7 @@ const getDiscussionById = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Discussion not found' });
     }
 
-    const author = getAuthorDisplay(discussion.user.id, discussion.user.role, discussion.user.name, userId, userRole);
+    const author = getAuthorDisplay(discussion.user.id, discussion.user.role, [discussion.user.firstName, discussion.user.lastName].filter(Boolean).join(' '), userId, userRole);
 
     res.json({
       success: true,
@@ -163,14 +163,14 @@ const createDiscussion = async (req, res, next) => {
     }
 
     // Fetch user name for admin view
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { name: true } });
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { firstName: true, lastName: true } });
 
     const discussion = await prisma.vaultDiscussion.create({
       data: { title, description, category, userId },
     });
 
     const isAdmin = userRole === 'ADMIN';
-    const authorName = isAdmin ? (user?.name || 'Admin') : 'Anonymous';
+    const authorName = isAdmin ? ([user?.firstName, user?.lastName].filter(Boolean).join(' ') || 'Admin') : 'Anonymous';
 
     res.status(201).json({
       success: true,
@@ -270,7 +270,7 @@ const getComments = async (req, res, next) => {
       take: take + 1,
       orderBy: { createdAt: 'desc' },
       include: {
-        user: { select: { id: true, role: true, name: true } },
+        user: { select: { id: true, role: true, firstName: true, lastName: true } },
         _count: { select: { replies: true, likes: true } },
         likes: {
           where: { userId },
@@ -280,7 +280,7 @@ const getComments = async (req, res, next) => {
           take: 3, // Preload first 3 replies
           orderBy: { createdAt: 'asc' },
           include: {
-            user: { select: { id: true, role: true, name: true } },
+            user: { select: { id: true, role: true, firstName: true, lastName: true } },
             _count: { select: { replies: true, likes: true } },
             likes: {
               where: { userId },
@@ -302,7 +302,7 @@ const getComments = async (req, res, next) => {
     const results = hasMore ? comments.slice(0, take) : comments;
 
     const formatComment = (c) => {
-      const author = getAuthorDisplay(c.user.id, c.user.role, c.user.name, userId, userRole);
+      const author = getAuthorDisplay(c.user.id, c.user.role, [c.user.firstName, c.user.lastName].filter(Boolean).join(' '), userId, userRole);
       return {
         id: c.id,
         content: c.content,
@@ -346,7 +346,7 @@ const getReplies = async (req, res, next) => {
       take: take + 1,
       orderBy: { createdAt: 'asc' },
       include: {
-        user: { select: { id: true, role: true, name: true } },
+        user: { select: { id: true, role: true, firstName: true, lastName: true } },
         _count: { select: { replies: true, likes: true } },
         likes: {
           where: { userId },
@@ -366,7 +366,7 @@ const getReplies = async (req, res, next) => {
     const results = hasMore ? replies.slice(0, take) : replies;
 
     const formatted = results.map((r) => {
-      const author = getAuthorDisplay(r.user.id, r.user.role, r.user.name, userId, userRole);
+      const author = getAuthorDisplay(r.user.id, r.user.role, [r.user.firstName, r.user.lastName].filter(Boolean).join(' '), userId, userRole);
       return {
         id: r.id,
         content: r.content,
@@ -425,7 +425,7 @@ const createComment = async (req, res, next) => {
     }
 
     // Fetch user name for admin view
-    const user = await prisma.user.findUnique({ where: { id: userId }, select: { name: true } });
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { firstName: true, lastName: true } });
 
     const comment = await prisma.vaultComment.create({
       data: {
@@ -437,7 +437,7 @@ const createComment = async (req, res, next) => {
     });
 
     const isAdmin = userRole === 'ADMIN';
-    const authorName = isAdmin ? (user?.name || 'Admin') : 'Anonymous';
+    const authorName = isAdmin ? ([user?.firstName, user?.lastName].filter(Boolean).join(' ') || 'Admin') : 'Anonymous';
 
     res.status(201).json({
       success: true,
@@ -572,7 +572,7 @@ const pollDiscussions = async (req, res, next) => {
       where,
       orderBy: { createdAt: 'desc' },
       include: {
-        user: { select: { id: true, role: true, name: true } },
+        user: { select: { id: true, role: true, firstName: true, lastName: true } },
         _count: { select: { comments: true, likes: true } },
         likes: {
           where: { userId },
@@ -582,7 +582,7 @@ const pollDiscussions = async (req, res, next) => {
     });
 
     const formatted = newDiscussions.map((d) => {
-      const author = getAuthorDisplay(d.user.id, d.user.role, d.user.name, userId, userRole);
+      const author = getAuthorDisplay(d.user.id, d.user.role, [d.user.firstName, d.user.lastName].filter(Boolean).join(' '), userId, userRole);
       return {
         id: d.id,
         title: d.title,
