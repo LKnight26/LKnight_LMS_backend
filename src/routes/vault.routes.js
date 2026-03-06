@@ -13,6 +13,7 @@ const {
   toggleCommentLike,
   deleteComment,
   getStats,
+  pollDiscussions,
 } = require('../controllers/vault.controller');
 
 // All vault routes require authentication
@@ -22,6 +23,7 @@ router.use(verifyToken);
 router.get('/stats', getStats);
 
 // Discussions
+router.get('/discussions/poll', pollDiscussions);
 router.get('/discussions', getDiscussions);
 router.get('/discussions/:id', getDiscussionById);
 router.post('/discussions', createDiscussion);

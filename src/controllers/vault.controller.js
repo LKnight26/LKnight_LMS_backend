@@ -6,15 +6,24 @@ const prisma = require('../config/db');
 
 /**
  * Returns display author info based on role.
- * - If the author is ADMIN → show "Admin"
- * - All other users (including self) → show "Anonymous"
+ * - If the REQUESTING user is ADMIN → show actual user name (no anonymity for admins)
+ * - If the author is ADMIN → show "Admin" to regular users
+ * - All other users → show "Anonymous"
  * - isOwn flag is set so the user can delete their own posts
  */
-const getAuthorDisplay = (authorId, authorRole, requestingUserId) => {
-  if (authorRole === 'ADMIN') {
-    return { displayName: 'Admin', isAdmin: true, isOwn: authorId === requestingUserId };
+const getAuthorDisplay = (authorId, authorRole, authorName, requestingUserId, requestingUserRole) => {
+  const isOwn = authorId === requestingUserId;
+
+  // Admins see everyone's real name
+  if (requestingUserRole === 'ADMIN') {
+    return { displayName: authorName || 'Unknown User', isAdmin: authorRole === 'ADMIN', isOwn };
   }
-  return { displayName: 'Anonymous', isAdmin: false, isOwn: authorId === requestingUserId };
+
+  // Regular users see "Admin" or "Anonymous"
+  if (authorRole === 'ADMIN') {
+    return { displayName: 'Admin', isAdmin: true, isOwn };
+  }
+  return { displayName: 'Anonymous', isAdmin: false, isOwn };
 };
 
 // ============================================
@@ -26,6 +35,7 @@ const getDiscussions = async (req, res, next) => {
     const { category, cursor, limit = 10 } = req.query;
     const take = Math.min(parseInt(limit) || 10, 50);
     const userId = req.userId;
+    const userRole = req.userRole;
 
     const where = {};
     if (category && category !== 'all') {
@@ -38,7 +48,7 @@ const getDiscussions = async (req, res, next) => {
       take: take + 1, // Fetch one extra to check if there's a next page
       orderBy: { createdAt: 'desc' },
       include: {
-        user: { select: { id: true, role: true } },
+        user: { select: { id: true, role: true, name: true } },
         _count: { select: { comments: true, likes: true } },
         likes: {
           where: { userId },
@@ -58,7 +68,7 @@ const getDiscussions = async (req, res, next) => {
     const results = hasMore ? discussions.slice(0, take) : discussions;
 
     const formatted = results.map((d) => {
-      const author = getAuthorDisplay(d.user.id, d.user.role, userId);
+      const author = getAuthorDisplay(d.user.id, d.user.role, d.user.name, userId, userRole);
       return {
         id: d.id,
         title: d.title,
@@ -94,11 +104,12 @@ const getDiscussionById = async (req, res, next) => {
   try {
     const { id } = req.params;
     const userId = req.userId;
+    const userRole = req.userRole;
 
     const discussion = await prisma.vaultDiscussion.findUnique({
       where: { id },
       include: {
-        user: { select: { id: true, role: true } },
+        user: { select: { id: true, role: true, name: true } },
         _count: { select: { comments: true, likes: true } },
         likes: {
           where: { userId },
@@ -111,7 +122,7 @@ const getDiscussionById = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Discussion not found' });
     }
 
-    const author = getAuthorDisplay(discussion.user.id, discussion.user.role, userId);
+    const author = getAuthorDisplay(discussion.user.id, discussion.user.role, discussion.user.name, userId, userRole);
 
     res.json({
       success: true,
@@ -151,11 +162,15 @@ const createDiscussion = async (req, res, next) => {
       });
     }
 
+    // Fetch user name for admin view
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { name: true } });
+
     const discussion = await prisma.vaultDiscussion.create({
       data: { title, description, category, userId },
     });
 
     const isAdmin = userRole === 'ADMIN';
+    const authorName = isAdmin ? (user?.name || 'Admin') : 'Anonymous';
 
     res.status(201).json({
       success: true,
@@ -165,7 +180,7 @@ const createDiscussion = async (req, res, next) => {
         description: discussion.description,
         category: discussion.category,
         createdAt: discussion.createdAt,
-        author: isAdmin ? 'Admin' : 'Anonymous',
+        author: authorName,
         isAdmin,
         isOwn: true,
         likesCount: 0,
@@ -248,13 +263,14 @@ const getComments = async (req, res, next) => {
     const { cursor, limit = 10 } = req.query;
     const take = Math.min(parseInt(limit) || 10, 50);
     const userId = req.userId;
+    const userRole = req.userRole;
 
     const queryOptions = {
       where: { discussionId: id, parentId: null }, // Only top-level comments
       take: take + 1,
       orderBy: { createdAt: 'desc' },
       include: {
-        user: { select: { id: true, role: true } },
+        user: { select: { id: true, role: true, name: true } },
         _count: { select: { replies: true, likes: true } },
         likes: {
           where: { userId },
@@ -264,7 +280,7 @@ const getComments = async (req, res, next) => {
           take: 3, // Preload first 3 replies
           orderBy: { createdAt: 'asc' },
           include: {
-            user: { select: { id: true, role: true } },
+            user: { select: { id: true, role: true, name: true } },
             _count: { select: { replies: true, likes: true } },
             likes: {
               where: { userId },
@@ -286,7 +302,7 @@ const getComments = async (req, res, next) => {
     const results = hasMore ? comments.slice(0, take) : comments;
 
     const formatComment = (c) => {
-      const author = getAuthorDisplay(c.user.id, c.user.role, userId);
+      const author = getAuthorDisplay(c.user.id, c.user.role, c.user.name, userId, userRole);
       return {
         id: c.id,
         content: c.content,
@@ -323,13 +339,14 @@ const getReplies = async (req, res, next) => {
     const { cursor, limit = 10 } = req.query;
     const take = Math.min(parseInt(limit) || 10, 50);
     const userId = req.userId;
+    const userRole = req.userRole;
 
     const queryOptions = {
       where: { parentId: commentId },
       take: take + 1,
       orderBy: { createdAt: 'asc' },
       include: {
-        user: { select: { id: true, role: true } },
+        user: { select: { id: true, role: true, name: true } },
         _count: { select: { replies: true, likes: true } },
         likes: {
           where: { userId },
@@ -349,7 +366,7 @@ const getReplies = async (req, res, next) => {
     const results = hasMore ? replies.slice(0, take) : replies;
 
     const formatted = results.map((r) => {
-      const author = getAuthorDisplay(r.user.id, r.user.role, userId);
+      const author = getAuthorDisplay(r.user.id, r.user.role, r.user.name, userId, userRole);
       return {
         id: r.id,
         content: r.content,
@@ -407,6 +424,9 @@ const createComment = async (req, res, next) => {
       }
     }
 
+    // Fetch user name for admin view
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { name: true } });
+
     const comment = await prisma.vaultComment.create({
       data: {
         content,
@@ -417,6 +437,7 @@ const createComment = async (req, res, next) => {
     });
 
     const isAdmin = userRole === 'ADMIN';
+    const authorName = isAdmin ? (user?.name || 'Admin') : 'Anonymous';
 
     res.status(201).json({
       success: true,
@@ -424,7 +445,7 @@ const createComment = async (req, res, next) => {
         id: comment.id,
         content: comment.content,
         createdAt: comment.createdAt,
-        author: isAdmin ? 'Admin' : 'Anonymous',
+        author: authorName,
         isAdmin,
         isOwn: true,
         likesCount: 0,
@@ -526,6 +547,66 @@ const getStats = async (req, res, next) => {
   }
 };
 
+// ============================================
+// GET /api/vault/discussions/poll
+// Lightweight polling endpoint — returns new/updated discussion IDs since timestamp
+// ============================================
+const pollDiscussions = async (req, res, next) => {
+  try {
+    const { since, category } = req.query;
+    const userId = req.userId;
+    const userRole = req.userRole;
+
+    if (!since) {
+      return res.status(400).json({ success: false, message: 'since parameter is required' });
+    }
+
+    const sinceDate = new Date(since);
+
+    const where = { createdAt: { gt: sinceDate } };
+    if (category && category !== 'all') {
+      where.category = category;
+    }
+
+    const newDiscussions = await prisma.vaultDiscussion.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        user: { select: { id: true, role: true, name: true } },
+        _count: { select: { comments: true, likes: true } },
+        likes: {
+          where: { userId },
+          select: { id: true },
+        },
+      },
+    });
+
+    const formatted = newDiscussions.map((d) => {
+      const author = getAuthorDisplay(d.user.id, d.user.role, d.user.name, userId, userRole);
+      return {
+        id: d.id,
+        title: d.title,
+        description: d.description,
+        category: d.category,
+        createdAt: d.createdAt,
+        author: author.displayName,
+        isAdmin: author.isAdmin,
+        isOwn: author.isOwn,
+        likesCount: d._count.likes,
+        commentsCount: d._count.comments,
+        isLiked: d.likes.length > 0,
+      };
+    });
+
+    res.json({
+      success: true,
+      data: { discussions: formatted },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getDiscussions,
   getDiscussionById,
@@ -538,4 +619,5 @@ module.exports = {
   toggleCommentLike,
   deleteComment,
   getStats,
+  pollDiscussions,
 };
