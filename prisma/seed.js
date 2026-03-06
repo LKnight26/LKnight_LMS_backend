@@ -24,7 +24,7 @@ async function main() {
 
   console.log('Admin user created:', admin.email);
 
-  // Seed default plans
+  // Static plans — pricing is fixed, Stripe IDs come from env vars
   const plans = [
     {
       name: 'Individual Plan',
@@ -47,6 +47,9 @@ async function main() {
       isPopular: false,
       order: 0,
       isActive: true,
+      stripeProductId: process.env.STRIPE_PRODUCT_INDIVIDUAL || null,
+      stripeMonthlyPriceId: process.env.STRIPE_PRICE_INDIVIDUAL_MONTHLY || null,
+      stripeYearlyPriceId: process.env.STRIPE_PRICE_INDIVIDUAL_YEARLY || null,
     },
     {
       name: 'Small Team Plan',
@@ -54,7 +57,7 @@ async function main() {
       description: 'For small teams building trust and shared language.',
       tagline: 'Build your foundation.',
       closeLine: 'Create shared language, deepen trust, and equip every leader to show up with intention.',
-      monthlyPrice: null,
+      monthlyPrice: process.env.PLAN_SMALL_TEAM_MONTHLY_PRICE ? parseFloat(process.env.PLAN_SMALL_TEAM_MONTHLY_PRICE) : null,
       yearlyPrice: 2000,
       maxUsers: 50,
       additionalUserPrice: 25,
@@ -68,6 +71,9 @@ async function main() {
       isPopular: false,
       order: 1,
       isActive: true,
+      stripeProductId: process.env.STRIPE_PRODUCT_SMALL_TEAM || null,
+      stripeMonthlyPriceId: process.env.STRIPE_PRICE_SMALL_TEAM_MONTHLY || null,
+      stripeYearlyPriceId: process.env.STRIPE_PRICE_SMALL_TEAM_YEARLY || null,
     },
     {
       name: 'Organization Plan',
@@ -75,7 +81,7 @@ async function main() {
       description: 'For growing companies scaling leadership across teams.',
       tagline: 'Scale leadership at every level.',
       closeLine: 'Build a culture of empathy, accountability, and courage — one leader at a time.',
-      monthlyPrice: null,
+      monthlyPrice: process.env.PLAN_ORGANIZATION_MONTHLY_PRICE ? parseFloat(process.env.PLAN_ORGANIZATION_MONTHLY_PRICE) : null,
       yearlyPrice: 6500,
       maxUsers: 250,
       additionalUserPrice: 20,
@@ -89,6 +95,9 @@ async function main() {
       isPopular: false,
       order: 2,
       isActive: true,
+      stripeProductId: process.env.STRIPE_PRODUCT_ORGANIZATION || null,
+      stripeMonthlyPriceId: process.env.STRIPE_PRICE_ORGANIZATION_MONTHLY || null,
+      stripeYearlyPriceId: process.env.STRIPE_PRICE_ORGANIZATION_YEARLY || null,
     },
     {
       name: 'Enterprise Plan',
@@ -96,7 +105,7 @@ async function main() {
       description: 'For large organizations transforming culture at scale.',
       tagline: 'Transform your culture at scale.',
       closeLine: 'Set a new standard for leadership. Scalable, data-informed, and rooted in humanity, this plan evolves with you.',
-      monthlyPrice: null,
+      monthlyPrice: process.env.PLAN_ENTERPRISE_MONTHLY_PRICE ? parseFloat(process.env.PLAN_ENTERPRISE_MONTHLY_PRICE) : null,
       yearlyPrice: 13000,
       maxUsers: 1000,
       additionalUserPrice: null,
@@ -110,18 +119,21 @@ async function main() {
       isPopular: false,
       order: 3,
       isActive: true,
+      stripeProductId: process.env.STRIPE_PRODUCT_ENTERPRISE || null,
+      stripeMonthlyPriceId: process.env.STRIPE_PRICE_ENTERPRISE_MONTHLY || null,
+      stripeYearlyPriceId: process.env.STRIPE_PRICE_ENTERPRISE_YEARLY || null,
     },
   ];
 
   for (const plan of plans) {
     await prisma.plan.upsert({
       where: { slug: plan.slug },
-      update: {},
+      update: plan,
       create: plan,
     });
   }
 
-  console.log('Default plans seeded:', plans.length);
+  console.log('Default plans seeded/synced:', plans.length);
 }
 
 main()
