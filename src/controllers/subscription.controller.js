@@ -148,6 +148,7 @@ const createSubscriptionCheckout = async (req, res, next) => {
       mode: 'subscription',
       customer: stripeCustomerId,
       automatic_tax: { enabled: false },
+      adaptive_pricing: { enabled: false },
       payment_method_types: ['card'],
       line_items: [
         {
