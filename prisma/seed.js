@@ -125,10 +125,49 @@ async function main() {
     },
   ];
 
+  const validSlugs = plans.map((p) => p.slug);
+
+  // Delete any old plans not in our static list (that have no active subscriptions)
+  const oldPlans = await prisma.plan.findMany({
+    where: { slug: { notIn: validSlugs } },
+    include: { _count: { select: { subscriptions: true } } },
+  });
+
+  for (const old of oldPlans) {
+    if (old._count.subscriptions === 0) {
+      await prisma.plan.delete({ where: { id: old.id } });
+      console.log(`Deleted old plan: "${old.name}" (slug: ${old.slug})`);
+    } else {
+      // Can't delete — deactivate instead
+      await prisma.plan.update({ where: { id: old.id }, data: { isActive: false } });
+      console.log(`Deactivated old plan: "${old.name}" (slug: ${old.slug}) — has ${old._count.subscriptions} subscription(s)`);
+    }
+  }
+
+  // Also handle name conflicts: if a plan with one of our names exists under a different slug
   for (const plan of plans) {
+    const conflict = await prisma.plan.findUnique({ where: { name: plan.name } });
+    if (conflict && conflict.slug !== plan.slug) {
+      if ((await prisma.subscription.count({ where: { planId: conflict.id } })) === 0) {
+        await prisma.plan.delete({ where: { id: conflict.id } });
+        console.log(`Deleted conflicting plan: "${conflict.name}" (slug: ${conflict.slug})`);
+      } else {
+        // Rename the old one to avoid conflict
+        await prisma.plan.update({
+          where: { id: conflict.id },
+          data: { name: `${conflict.name} (old)`, isActive: false },
+        });
+        console.log(`Renamed conflicting plan: "${conflict.name}" → "${conflict.name} (old)"`);
+      }
+    }
+  }
+
+  // Now upsert the static plans
+  for (const plan of plans) {
+    const { slug, ...updateData } = plan;
     await prisma.plan.upsert({
-      where: { slug: plan.slug },
-      update: plan,
+      where: { slug },
+      update: updateData,
       create: plan,
     });
   }
