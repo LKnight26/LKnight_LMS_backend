@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { verifyToken } = require('../middleware/auth');
+const { userHasActiveSubscription } = require('../controllers/subscription.controller');
 const {
   getDiscussions,
   getDiscussionById,
@@ -18,6 +19,24 @@ const {
 
 // All vault routes require authentication
 router.use(verifyToken);
+
+// Vault is only for paid or trial plan members
+const requirePaidOrTrial = async (req, res, next) => {
+  try {
+    const hasAccess = await userHasActiveSubscription(req.userId);
+    if (!hasAccess) {
+      return res.status(403).json({
+        success: false,
+        message: 'The Vault is available only for paid or trial plan members. Please upgrade to access.',
+        code: 'VAULT_REQUIRES_SUBSCRIPTION',
+      });
+    }
+    next();
+  } catch (err) {
+    next(err);
+  }
+};
+router.use(requirePaidOrTrial);
 
 // Stats
 router.get('/stats', getStats);
