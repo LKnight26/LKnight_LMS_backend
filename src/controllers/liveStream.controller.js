@@ -223,11 +223,12 @@ const deleteStream = async (req, res, next) => {
       console.warn('[LIVESTREAM] Mux delete failed, still removing from DB:', muxErr.message);
     }
 
-    await liveStreamModel.delete({ where: { id } });
+    // deleteMany is idempotent: does not throw if record was already removed (e.g. race or manual delete)
+    const { count } = await liveStreamModel.deleteMany({ where: { id } });
 
     res.status(200).json({
       success: true,
-      message: 'Live stream deleted',
+      message: count > 0 ? 'Live stream deleted' : 'Live stream deleted or already removed',
     });
   } catch (error) {
     next(error);
@@ -340,6 +341,30 @@ const getPlaybackById = async (req, res, next) => {
   }
 };
 
+/**
+ * @desc    Public: check if any stream exists and is available (idle or active)
+ *          Used for red-dot indicator; stream is "live" when created (idle) or broadcasting (active).
+ * @route   GET /api/live-streams/active-status
+ * @access  Public (no auth)
+ */
+const getStreamActiveStatus = async (req, res, next) => {
+  try {
+    const liveStreamModel = getLiveStreamModel();
+    if (!liveStreamModel) {
+      return res.status(200).json({ success: true, data: { active: false } });
+    }
+    const stream = await liveStreamModel.findFirst({
+      where: { status: { in: ['active', 'idle'] } },
+    });
+    res.status(200).json({
+      success: true,
+      data: { active: !!stream },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   createStream,
   listStreams,
@@ -348,4 +373,5 @@ module.exports = {
   deleteStream,
   getActiveStream,
   getPlaybackById,
+  getStreamActiveStatus,
 };

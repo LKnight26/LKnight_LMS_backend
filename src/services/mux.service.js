@@ -22,6 +22,8 @@ async function createLiveStream(options = {}) {
       'Authorization': authHeader(),
     },
     body: JSON.stringify({
+      latency_mode: 'reduced',
+      reconnect_window: 60,
       playback_policies: ['public'],
       new_asset_settings: { playback_policies: ['public'] },
     }),

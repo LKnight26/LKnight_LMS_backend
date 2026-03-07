@@ -10,6 +10,7 @@ const {
   deleteStream,
   getActiveStream,
   getPlaybackById,
+  getStreamActiveStatus,
 } = require('../controllers/liveStream.controller');
 
 const requirePaidOrTrial = async (req, res, next) => {
@@ -27,6 +28,9 @@ const requirePaidOrTrial = async (req, res, next) => {
     next(err);
   }
 };
+
+// ---- Public (no auth) - must be before /:id ----
+router.get('/active-status', getStreamActiveStatus);
 
 // ---- Viewer routes (authenticated + paid/trial) - must be before /:id ----
 router.get('/playback/active', verifyToken, requirePaidOrTrial, getActiveStream);
