@@ -2,6 +2,15 @@ const prisma = require('../config/db');
 const muxService = require('../services/mux.service');
 const { userHasActiveSubscription } = require('./subscription.controller');
 
+function getLiveStreamModel() {
+  const model = prisma.liveStream;
+  if (!model) {
+    console.error('[LiveStream] Prisma client missing liveStream model. Run in backend: npx prisma generate');
+    return null;
+  }
+  return model;
+}
+
 /**
  * @desc    Create a new live stream (admin)
  * @route   POST /api/live-streams
@@ -21,7 +30,14 @@ const createStream = async (req, res, next) => {
 
     const muxResult = await muxService.createLiveStream({ title });
 
-    const stream = await prisma.liveStream.create({
+    const liveStreamModel = getLiveStreamModel();
+    if (!liveStreamModel) {
+      return res.status(503).json({
+        success: false,
+        message: 'Live stream not configured. Run in backend: npx prisma generate',
+      });
+    }
+    const stream = await liveStreamModel.create({
       data: {
         muxLiveStreamId: muxResult.id,
         playbackId: muxResult.playbackId,
@@ -63,7 +79,11 @@ const createStream = async (req, res, next) => {
  */
 const listStreams = async (req, res, next) => {
   try {
-    const streams = await prisma.liveStream.findMany({
+    const liveStreamModel = getLiveStreamModel();
+    if (!liveStreamModel) {
+      return res.status(503).json({ success: false, message: 'Live stream not configured. Run: npx prisma generate' });
+    }
+    const streams = await liveStreamModel.findMany({
       orderBy: { createdAt: 'desc' },
       include: {
         createdBy: {
@@ -97,8 +117,12 @@ const listStreams = async (req, res, next) => {
  */
 const getStreamById = async (req, res, next) => {
   try {
+    const liveStreamModel = getLiveStreamModel();
+    if (!liveStreamModel) {
+      return res.status(503).json({ success: false, message: 'Live stream not configured. Run: npx prisma generate' });
+    }
     const { id } = req.params;
-    const stream = await prisma.liveStream.findUnique({
+    const stream = await liveStreamModel.findUnique({
       where: { id },
       include: {
         createdBy: {
@@ -133,10 +157,14 @@ const getStreamById = async (req, res, next) => {
  */
 const updateStream = async (req, res, next) => {
   try {
+    const liveStreamModel = getLiveStreamModel();
+    if (!liveStreamModel) {
+      return res.status(503).json({ success: false, message: 'Live stream not configured. Run: npx prisma generate' });
+    }
     const { id } = req.params;
     const { title, status } = req.body || {};
 
-    const stream = await prisma.liveStream.findUnique({ where: { id } });
+    const stream = await liveStreamModel.findUnique({ where: { id } });
     if (!stream) {
       return res.status(404).json({
         success: false,
@@ -150,7 +178,7 @@ const updateStream = async (req, res, next) => {
       updateData.status = status;
     }
 
-    const updated = await prisma.liveStream.update({
+    const updated = await liveStreamModel.update({
       where: { id },
       data: updateData,
       include: {
@@ -176,8 +204,12 @@ const updateStream = async (req, res, next) => {
  */
 const deleteStream = async (req, res, next) => {
   try {
+    const liveStreamModel = getLiveStreamModel();
+    if (!liveStreamModel) {
+      return res.status(503).json({ success: false, message: 'Live stream not configured. Run: npx prisma generate' });
+    }
     const { id } = req.params;
-    const stream = await prisma.liveStream.findUnique({ where: { id } });
+    const stream = await liveStreamModel.findUnique({ where: { id } });
     if (!stream) {
       return res.status(404).json({
         success: false,
@@ -191,7 +223,7 @@ const deleteStream = async (req, res, next) => {
       console.warn('[LIVESTREAM] Mux delete failed, still removing from DB:', muxErr.message);
     }
 
-    await prisma.liveStream.delete({ where: { id } });
+    await liveStreamModel.delete({ where: { id } });
 
     res.status(200).json({
       success: true,
@@ -218,7 +250,11 @@ const getActiveStream = async (req, res, next) => {
       });
     }
 
-    const stream = await prisma.liveStream.findFirst({
+    const liveStreamModel = getLiveStreamModel();
+    if (!liveStreamModel) {
+      return res.status(503).json({ success: false, message: 'Live stream not configured. Run: npx prisma generate' });
+    }
+    const stream = await liveStreamModel.findFirst({
       where: { status: { in: ['active', 'idle'] } },
       orderBy: { updatedAt: 'desc' },
     });
@@ -264,8 +300,12 @@ const getPlaybackById = async (req, res, next) => {
       });
     }
 
+    const liveStreamModel = getLiveStreamModel();
+    if (!liveStreamModel) {
+      return res.status(503).json({ success: false, message: 'Live stream not configured. Run: npx prisma generate' });
+    }
     const { id } = req.params;
-    const stream = await prisma.liveStream.findUnique({
+    const stream = await liveStreamModel.findUnique({
       where: { id },
     });
 
