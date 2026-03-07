@@ -43,6 +43,9 @@ model User {
   vaultDiscussions VaultDiscussion[] @relation("UserDiscussions")
   vaultComments    VaultComment[]    @relation("UserComments")
   vaultLikes       VaultLike[]       @relation("UserLikes")
+
+  // Live stream relations (admin-created)
+  liveStreamsCreated LiveStream[]
 }
 
 model Admin {
@@ -149,6 +152,27 @@ model Lesson {
 
   @@index([moduleId])
   @@index([bunnyVideoId])
+}
+
+// ============================================
+// LIVE STREAM MODEL (Mux)
+// ============================================
+
+model LiveStream {
+  id              String   @id @default(uuid())
+  muxLiveStreamId String   @unique
+  playbackId      String
+  streamKey       String?  // Shown once at create; optional to persist for admin copy
+  status          String   @default("idle") // idle | active | disabled
+  title           String?
+  createdById     String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  createdBy User @relation(fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([createdById])
+  @@index([status])
 }
 
 // ============================================

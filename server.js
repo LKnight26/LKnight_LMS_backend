@@ -34,6 +34,7 @@ const teamRoutes = require('./src/routes/team.routes');
 const testimonialRoutes = require('./src/routes/testimonial.routes');
 const contactRoutes = require('./src/routes/contact.routes');
 const vaultRoutes = require('./src/routes/vault.routes');
+const liveStreamRoutes = require('./src/routes/liveStream.routes');
 const settingsRoutes = require('./src/routes/settings.routes');
 const planRoutes = require('./src/routes/plan.routes');
 const subscriptionRoutes = require('./src/routes/subscription.routes');
@@ -123,6 +124,9 @@ app.post('/api/webhooks/stripe', express.raw({ type: 'application/json' }), asyn
 const { handleBunnyWebhook } = require('./src/controllers/bunnyWebhook.controller');
 app.post('/api/webhooks/bunny', express.raw({ type: 'application/json' }), handleBunnyWebhook);
 
+const { handleMuxWebhook } = require('./src/controllers/muxWebhook.controller');
+app.post('/api/webhooks/mux', express.raw({ type: 'application/json' }), handleMuxWebhook);
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
@@ -206,6 +210,11 @@ app.use('/api/contact', contactRoutes);
 // VAULT ROUTES
 // ============================================
 app.use('/api/vault', vaultRoutes);
+
+// ============================================
+// LIVE STREAM ROUTES (Mux)
+// ============================================
+app.use('/api/live-streams', liveStreamRoutes);
 
 // ============================================
 // PLAN & SUBSCRIPTION ROUTES
