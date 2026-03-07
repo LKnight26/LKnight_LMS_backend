@@ -8,6 +8,7 @@ const {
   getSubscriptionBySessionId,
   getTeamMembers,
   addTeamMember,
+  acceptInvite,
   removeTeamMember,
 } = require('../controllers/subscription.controller');
 const { verifyToken } = require('../middleware/auth');
@@ -116,6 +117,8 @@ router.get('/session/:sessionId', verifyToken, getSubscriptionBySessionId);
  *       200:
  *         description: List of team members
  */
+router.post('/accept-invite', verifyToken, acceptInvite);
+
 router.get('/:id/members', verifyToken, getTeamMembers);
 
 /**

@@ -1,5 +1,7 @@
+const crypto = require('crypto');
 const prisma = require('../config/db');
 const stripe = require('../config/stripe');
+const { sendTeamInvitationEmail } = require('../services/email.service');
 
 /**
  * Check if a user has an active subscription (direct or via team membership)
@@ -548,7 +550,7 @@ const getTeamMembers = async (req, res, next) => {
 };
 
 /**
- * @desc    Add team member to subscription
+ * @desc    Add team member / send invitation by email. Always sends email; if user exists, grants access; if not, sends invite link.
  * @route   POST /api/subscriptions/:id/members
  * @access  Subscription Owner
  */
@@ -556,7 +558,7 @@ const addTeamMember = async (req, res, next) => {
   try {
     const userId = req.userId;
     const { id } = req.params;
-    const { email } = req.body;
+    const email = (req.body.email || '').trim().toLowerCase();
 
     if (!email) {
       return res.status(400).json({
@@ -565,11 +567,14 @@ const addTeamMember = async (req, res, next) => {
       });
     }
 
-    // Verify ownership
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+
+    // Verify ownership and load subscription with counts
     const subscription = await prisma.subscription.findUnique({
       where: { id },
       include: {
         _count: { select: { members: true } },
+        plan: { select: { name: true } },
       },
     });
 
@@ -580,66 +585,251 @@ const addTeamMember = async (req, res, next) => {
       });
     }
 
-    // Check max users limit (include the owner in the count)
-    const totalUsers = subscription._count.members + 1; // +1 for owner
-    if (totalUsers >= subscription.maxUsers) {
+    // Inviter name for email
+    const inviter = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { firstName: true, lastName: true },
+    });
+    const inviterName = [inviter?.firstName, inviter?.lastName].filter(Boolean).join(' ') || 'A team owner';
+
+    // Count: owner + members + pending invitations must not exceed maxUsers
+    const memberCount = subscription._count.members;
+    const pendingCount = await prisma.subscriptionInvitation.count({
+      where: { subscriptionId: id, expiresAt: { gt: new Date() } },
+    });
+    const totalSeatsUsed = 1 + memberCount + pendingCount;
+    const alreadyMemberOrInvited = await prisma.subscriptionMember.findFirst({
+      where: { subscriptionId: id, user: { email } },
+    });
+    const existingInvite = await prisma.subscriptionInvitation.findUnique({
+      where: { subscriptionId_email: { subscriptionId: id, email } },
+    });
+    if (existingInvite && existingInvite.expiresAt > new Date()) {
+      // Resend invitation email only
+      const acceptUrl = `${frontendUrl}/accept-invite?token=${existingInvite.token}`;
+      const sent = await sendTeamInvitationEmail({
+        to: email,
+        inviterName,
+        acceptUrl,
+        isExistingUser: false,
+      });
+      return res.status(200).json({
+        success: true,
+        message: sent.sent ? 'Invitation email sent again.' : 'Invitation is pending; email could not be sent. Please try again.',
+        data: { email, invited: true },
+      });
+    }
+    if (alreadyMemberOrInvited) {
+      const acceptUrl = `${frontendUrl}/dashboard`;
+      await sendTeamInvitationEmail({
+        to: email,
+        inviterName,
+        acceptUrl,
+        isExistingUser: true,
+      });
+      return res.status(200).json({
+        success: true,
+        message: 'This user already has access. A reminder email was sent.',
+        data: { email },
+      });
+    }
+
+    if (totalSeatsUsed >= subscription.maxUsers) {
       return res.status(400).json({
         success: false,
         message: `Team member limit reached (${subscription.maxUsers} users). Please upgrade your plan or contact sales for additional seats.`,
       });
     }
 
-    // Find user by email
     const memberUser = await prisma.user.findUnique({
-      where: { email: email.toLowerCase() },
+      where: { email },
     });
 
-    if (!memberUser) {
-      return res.status(404).json({
-        success: false,
-        message: 'No user found with this email. They must create an account first.',
+    if (memberUser) {
+      // Existing user: can't add self
+      if (memberUser.id === userId) {
+        return res.status(400).json({
+          success: false,
+          message: 'You cannot invite yourself.',
+        });
+      }
+
+      const existingMember = await prisma.subscriptionMember.findUnique({
+        where: { userId_subscriptionId: { userId: memberUser.id, subscriptionId: id } },
+      });
+      if (existingMember) {
+        const acceptUrl = `${frontendUrl}/dashboard`;
+        await sendTeamInvitationEmail({
+          to: email,
+          inviterName,
+          acceptUrl,
+          isExistingUser: true,
+        });
+        return res.status(200).json({
+          success: true,
+          message: 'This user already has access. A reminder email was sent.',
+          data: { email },
+        });
+      }
+
+      const member = await prisma.subscriptionMember.create({
+        data: {
+          userId: memberUser.id,
+          subscriptionId: id,
+          role: 'member',
+        },
+        include: {
+          user: {
+            select: { id: true, email: true, firstName: true, lastName: true, avatar: true },
+          },
+        },
+      });
+
+      const acceptUrl = `${frontendUrl}/dashboard`;
+      const sent = await sendTeamInvitationEmail({
+        to: email,
+        inviterName,
+        acceptUrl,
+        isExistingUser: true,
+      });
+      if (!sent.sent) {
+        console.warn('[SUBSCRIPTION] Member added but invitation email failed:', sent.error?.message);
+      }
+
+      return res.status(201).json({
+        success: true,
+        message: 'Team member added and invitation email sent.',
+        data: member,
       });
     }
 
-    // Can't add the owner as a member
-    if (memberUser.id === userId) {
+    // New user: create pending invitation and send email
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+    await prisma.subscriptionInvitation.upsert({
+      where: { subscriptionId_email: { subscriptionId: id, email } },
+      create: {
+        subscriptionId: id,
+        email,
+        token,
+        expiresAt,
+        invitedById: userId,
+      },
+      update: { token, expiresAt, invitedById: userId },
+    });
+
+    const acceptUrl = `${frontendUrl}/accept-invite?token=${token}`;
+    const sent = await sendTeamInvitationEmail({
+      to: email,
+      inviterName,
+      acceptUrl,
+      isExistingUser: false,
+    });
+
+    if (!sent.sent) {
+      return res.status(503).json({
+        success: false,
+        message: 'Invitation could not be sent. Please check email configuration (RESEND_API_KEY) and try again.',
+      });
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: 'Invitation sent. They will get access when they sign up and accept.',
+      data: { email, invited: true },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Accept a team invitation by token (logged-in user whose email matches invitation).
+ * @route   POST /api/subscriptions/accept-invite
+ * @access  User
+ */
+const acceptInvite = async (req, res, next) => {
+  try {
+    const userId = req.userId;
+    const { token } = req.body;
+
+    if (!token) {
       return res.status(400).json({
         success: false,
-        message: 'You are already the subscription owner.',
+        message: 'Invitation token is required',
       });
     }
 
-    // Check if already a member
-    const existingMember = await prisma.subscriptionMember.findUnique({
-      where: {
-        userId_subscriptionId: { userId: memberUser.id, subscriptionId: id },
-      },
-    });
-
-    if (existingMember) {
-      return res.status(409).json({
-        success: false,
-        message: 'This user is already a member of your subscription.',
-      });
-    }
-
-    const member = await prisma.subscriptionMember.create({
-      data: {
-        userId: memberUser.id,
-        subscriptionId: id,
-        role: 'member',
-      },
+    const invitation = await prisma.subscriptionInvitation.findUnique({
+      where: { token },
       include: {
-        user: {
-          select: { id: true, email: true, firstName: true, lastName: true, avatar: true },
+        subscription: {
+          include: {
+            _count: { select: { members: true } },
+          },
         },
       },
     });
 
-    res.status(201).json({
+    if (!invitation) {
+      return res.status(404).json({
+        success: false,
+        message: 'Invitation not found or invalid',
+      });
+    }
+
+    if (invitation.expiresAt < new Date()) {
+      await prisma.subscriptionInvitation.delete({ where: { id: invitation.id } }).catch(() => {});
+      return res.status(410).json({
+        success: false,
+        message: 'This invitation has expired',
+      });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true },
+    });
+
+    if (!user || user.email.toLowerCase() !== invitation.email.toLowerCase()) {
+      return res.status(403).json({
+        success: false,
+        message: 'This invitation was sent to a different email. Please sign in with that email.',
+      });
+    }
+
+    const sub = invitation.subscription;
+    if (sub._count.members + 1 >= sub.maxUsers) {
+      return res.status(400).json({
+        success: false,
+        message: 'This team has reached its member limit. The invitation can no longer be accepted.',
+      });
+    }
+
+    const existing = await prisma.subscriptionMember.findUnique({
+      where: { userId_subscriptionId: { userId, subscriptionId: sub.id } },
+    });
+    if (existing) {
+      await prisma.subscriptionInvitation.delete({ where: { id: invitation.id } }).catch(() => {});
+      return res.status(200).json({
+        success: true,
+        message: 'You already have access.',
+        data: { subscriptionId: sub.id },
+      });
+    }
+
+    await prisma.$transaction([
+      prisma.subscriptionMember.create({
+        data: { userId, subscriptionId: sub.id, role: 'member' },
+      }),
+      prisma.subscriptionInvitation.delete({ where: { id: invitation.id } }),
+    ]);
+
+    res.status(200).json({
       success: true,
-      message: 'Team member added successfully',
-      data: member,
+      message: 'Invitation accepted. You now have access.',
+      data: { subscriptionId: sub.id },
     });
   } catch (error) {
     next(error);
@@ -702,5 +892,6 @@ module.exports = {
   getSubscriptionBySessionId,
   getTeamMembers,
   addTeamMember,
+  acceptInvite,
   removeTeamMember,
 };
