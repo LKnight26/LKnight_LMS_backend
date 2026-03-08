@@ -30,6 +30,7 @@ const lessonRoutes = require('./src/routes/lesson.routes');
 const { standaloneRouter: lessonStandaloneRoutes } = require('./src/routes/lesson.routes');
 const dashboardRoutes = require('./src/routes/dashboard.routes');
 const enrollmentRoutes = require('./src/routes/enrollment.routes');
+const uploadRoutes = require('./src/routes/upload.routes');
 const teamRoutes = require('./src/routes/team.routes');
 const testimonialRoutes = require('./src/routes/testimonial.routes');
 const contactRoutes = require('./src/routes/contact.routes');
@@ -190,6 +191,11 @@ app.use('/api/enrollments', enrollmentRoutes);
 // ADMIN DASHBOARD & ANALYTICS ROUTES
 // ============================================
 app.use('/api/admin/dashboard', dashboardRoutes);
+
+// ============================================
+// UPLOAD (Bunny Storage images)
+// ============================================
+app.use('/api/upload', uploadRoutes);
 
 // ============================================
 // TEAM ROUTES
