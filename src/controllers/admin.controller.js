@@ -212,13 +212,43 @@ const updateUserByAdmin = async (req, res, next) => {
   }
 };
 
-// Delete user (admin)
+// Delete user (admin) — including subscriptions, enrollments, vault data, etc.
 const deleteUserByAdmin = async (req, res, next) => {
   try {
     const { id } = req.params;
 
-    await prisma.user.delete({
+    // Ensure user exists
+    const existing = await prisma.user.findUnique({
       where: { id },
+      select: { id: true },
+    });
+
+    if (!existing) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    // Wrap in transaction so all related data is cleaned up together
+    await prisma.$transaction(async (tx) => {
+      // Delete enrollments
+      await tx.enrollment.deleteMany({ where: { userId: id } });
+
+      // Delete subscription members and subscriptions belonging to this user
+      await tx.subscriptionMember.deleteMany({ where: { userId: id } });
+      await tx.subscription.deleteMany({ where: { userId: id } });
+
+      // Delete vault activity (likes, comments, discussions)
+      await tx.vaultLike.deleteMany({ where: { userId: id } });
+      await tx.vaultComment.deleteMany({ where: { userId: id } });
+      await tx.vaultDiscussion.deleteMany({ where: { userId: id } });
+
+      // Delete any live streams created by this user
+      await tx.liveStream.deleteMany({ where: { createdById: id } });
+
+      // Finally delete the user
+      await tx.user.delete({ where: { id } });
     });
 
     res.status(200).json({
