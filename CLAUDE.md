@@ -106,4 +106,5 @@ Environment variables to set in Railway:
 - `JWT_SECRET`, `JWT_EXPIRES_IN`
 - `ALLOWED_ORIGINS` - Comma-separated frontend URLs for CORS
 - `GOOGLE_CLIENT_ID`, `SMTP_*` variables as needed
+- Optional security: `ENABLE_API_DOCS=true` to expose `/api-docs` in production; `ENABLE_SWAGGER_INTERACTIVE=true` for Swagger "Try it out"; `TRUST_PROXY=1` if not using default production trust proxy; `RATE_LIMIT_AUTH_MAX`, `RATE_LIMIT_API_MAX` to tune limits
 

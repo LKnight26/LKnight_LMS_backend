@@ -5,8 +5,10 @@ console.log('[SERVER] PORT:', process.env.PORT);
 
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const swaggerUi = require('swagger-ui-express');
 const swaggerSpec = require('./src/config/swagger');
+const { authLimiter, apiLimiter } = require('./src/middleware/rateLimit');
 
 // Handle uncaught exceptions
 process.on('uncaughtException', (err) => {
@@ -51,6 +53,13 @@ const errorHandler = require('./src/middleware/errorHandler');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Behind Railway / reverse proxy: correct client IP for rate limiting
+if (process.env.TRUST_PROXY === 'true' || process.env.TRUST_PROXY === '1') {
+  app.set('trust proxy', 1);
+} else if (process.env.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
+}
+
 // Middleware
 const allowedOrigins = process.env.ALLOWED_ORIGINS
   ? process.env.ALLOWED_ORIGINS.split(',')
@@ -59,6 +68,11 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
 app.use(cors({
   origin: allowedOrigins,
   credentials: true
+}));
+
+// Security headers (CSP disabled so Swagger UI and JSON API clients are unaffected)
+app.use(helmet({
+  contentSecurityPolicy: false,
 }));
 
 // ============================================
@@ -131,14 +145,24 @@ app.post('/api/webhooks/mux', express.raw({ type: 'application/json' }), handleM
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// Swagger Documentation
-const swaggerOptions = {
-  swaggerOptions: {
-    tryItOutEnabled: true,           // Auto-enable "Try it out" for all endpoints
-    persistAuthorization: true,      // Keep bearer token after page refresh
-  },
-};
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, swaggerOptions));
+app.use('/api', apiLimiter);
+
+// Swagger: in production, opt-in via ENABLE_API_DOCS=true; interactive "Try it out" opt-in via ENABLE_SWAGGER_INTERACTIVE=true
+const isProd = process.env.NODE_ENV === 'production';
+const enableApiDocs = !isProd || process.env.ENABLE_API_DOCS === 'true';
+const swaggerInteractive = !isProd || process.env.ENABLE_SWAGGER_INTERACTIVE === 'true';
+
+if (enableApiDocs) {
+  const swaggerOptions = {
+    swaggerOptions: {
+      tryItOutEnabled: swaggerInteractive,
+      persistAuthorization: swaggerInteractive,
+    },
+  };
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, swaggerOptions));
+} else {
+  console.log('[SERVER] Swagger UI disabled in production (set ENABLE_API_DOCS=true to enable)');
+}
 
 // Health check
 app.get('/', (req, res) => {
@@ -153,7 +177,7 @@ app.get('/', (req, res) => {
 // ============================================
 // AUTH & USER ROUTES
 // ============================================
-app.use('/api/auth', authRoutes);
+app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/admins', adminRoutes);
 
@@ -242,7 +266,9 @@ const HOST = '0.0.0.0';
 const server = app.listen(PORT, HOST, () => {
   console.log(`[SERVER] ✓ Server is running on port ${PORT}`);
   console.log(`[SERVER] ✓ Local:   http://localhost:${PORT}`);
-  console.log(`[SERVER] ✓ Swagger: http://localhost:${PORT}/api-docs`);
+  if (enableApiDocs) {
+    console.log(`[SERVER] ✓ Swagger: http://localhost:${PORT}/api-docs`);
+  }
 });
 
 server.on('error', (err) => {
